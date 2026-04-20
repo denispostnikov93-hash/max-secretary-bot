@@ -5,7 +5,7 @@ import asyncio
 import logging
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID
 from database import db
-from max_bot import init_bot
+from max_bot import start_polling
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,14 +37,10 @@ async def main():
         await db.init()
         logger.info("✓ БД готова")
 
-        logger.info("📱 Инициализирую Max бота...")
-        bot = await init_bot()
-
-        logger.info("=" * 60)
-        logger.info("🚀 Запускаю бота (Long Polling)...")
+        logger.info("📱 Запускаю Max бота...")
         logger.info("=" * 60)
 
-        await bot.start_polling()
+        await start_polling()
 
     except KeyboardInterrupt:
         logger.info("⏹️ Бот остановлен")
