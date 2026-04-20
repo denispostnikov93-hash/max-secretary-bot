@@ -41,7 +41,6 @@ async def main():
         logger.info("✓ Бот подключен к Max")
         logger.info("=" * 60)
 
-        # Запустить бота
         await max_bot.start()
 
     except KeyboardInterrupt:
