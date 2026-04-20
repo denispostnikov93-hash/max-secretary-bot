@@ -4,15 +4,13 @@ Max бот-секретарь для приема заявок
 import logging
 import re
 from aiomax import Bot, Router
-from aiomax.types import Message, CallbackQuery
-from aiomax.buttons import Button
+from aiomax.types import Message
 from datetime import datetime
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID, PRIVACY_POLICY_URL, AGREEMENT_URL
 from database import db
 
 logger = logging.getLogger(__name__)
 
-# === BOT ===
 class MaxSecretaryBot:
     def __init__(self):
         self.bot = Bot(access_token=MAX_BOT_TOKEN)
@@ -77,54 +75,6 @@ class MaxSecretaryBot:
                 logger.error(f"❌ Ошибка: {e}", exc_info=True)
                 await self.send_message(user_id, "❌ Ошибка. Повторите попытку.")
 
-    def main_keyboard(self):
-        """Главное меню"""
-        return [[Button(text="📝 Записаться на консультацию", type="callback", payload="record")]]
-
-    def consent_keyboard(self):
-        """Согласие"""
-        return [
-            [Button(text="✅ Согласен на обработку персональных данных", type="callback", payload="consent_pd")],
-            [Button(text="✅ Ознакомлен с политикой обработки данных", type="callback", payload="consent_policy")],
-            [Button(text="❌ Отказать в согласии", type="callback", payload="refuse_consent")]
-        ]
-
-    def client_type_keyboard(self):
-        """Выбор типа клиента"""
-        return [
-            [
-                Button(text="👤 Физическое лицо", type="callback", payload="individual"),
-                Button(text="🏢 Юридическое лицо", type="callback", payload="business")
-            ]
-        ]
-
-    def category_keyboard_individual(self):
-        """Категории для физлиц"""
-        return [
-            [Button(text="🚗 ДТП", type="callback", payload="car_accident")],
-            [Button(text="👨‍👩‍👧 Семейное право", type="callback", payload="family_law")],
-            [Button(text="🏠 Недвижимость", type="callback", payload="real_estate")],
-            [Button(text="💼 Трудовые споры", type="callback", payload="labor_disputes")],
-            [Button(text="❓ Другое", type="callback", payload="other_individual")]
-        ]
-
-    def category_keyboard_business(self):
-        """Категории для юрлиц"""
-        return [
-            [Button(text="📋 Регистрация бизнеса", type="callback", payload="business_reg")],
-            [Button(text="📝 Договоры и споры", type="callback", payload="contracts")],
-            [Button(text="👷 Трудовые вопросы", type="callback", payload="labor_issues")],
-            [Button(text="💰 Налоги и штрафы", type="callback", payload="taxes")],
-            [Button(text="❓ Другое", type="callback", payload="other_business")]
-        ]
-
-    def description_keyboard(self):
-        """Выбор: написать или пропустить"""
-        return [[
-            Button(text="✏️ Написать", type="callback", payload="write_desc"),
-            Button(text="➡️ Пропустить", type="callback", payload="skip_desc")
-        ]]
-
     def validate_phone(self, phone: str) -> bool:
         """Проверить корректность номера телефона"""
         cleaned = re.sub(r'[\s\-\(\)]', '', phone)
@@ -149,8 +99,8 @@ class MaxSecretaryBot:
         await self.send_message(
             user_id,
             "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\n"
-            "Мы поможем защитить ваши права. Для записи на консультацию нажмите кнопку.",
-            keyboard=self.main_keyboard()
+            "Мы поможем защитить ваши права. Для записи на консультацию нажмите кнопку.\n\n"
+            "📝 Записаться на консультацию"
         )
 
     async def btn_record(self, user_id: str):
@@ -170,8 +120,10 @@ class MaxSecretaryBot:
             f"Перед подачей заявки ознакомьтесь с документами и подтвердите:\n\n"
             f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
             f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
-            f"Нажмите обе кнопки ниже для подтверждения:",
-            keyboard=self.consent_keyboard()
+            f"Нажмите обе кнопки ниже для подтверждения:\n"
+            f"✅ Согласен на обработку персональных данных\n"
+            f"✅ Ознакомлен с политикой обработки данных\n"
+            f"❌ Отказать в согласии"
         )
 
     async def consent_pd_handler(self, user_id: str):
@@ -201,11 +153,6 @@ class MaxSecretaryBot:
         self.user_states[user_id] = None
         self.user_data[user_id] = {}
 
-        keyboard = [
-            [Button(text="☎️ Позвонить: 8-495-999-85-89", type="callback", payload="call_phone")],
-            [Button(text="↩️ Дать согласие и оставить заявку", type="callback", payload="retry_consent")]
-        ]
-
         await self.send_message(
             user_id,
             "😔 Мы уважаем ваше решение и соблюдаем закон о защите персональных данных.\n\n"
@@ -213,8 +160,9 @@ class MaxSecretaryBot:
             "Но это не означает, что мы не можем вам помочь! 💪\n\n"
             "Выберите один из вариантов:\n"
             "• Позвоните нам по номеру 8-495-999-85-89 и получите бесплатную консультацию\n"
-            "• Или дайте согласие и оставьте заявку через бота",
-            keyboard=keyboard
+            "• Или дайте согласие и оставьте заявку через бота\n\n"
+            "☎️ Позвонить: 8-495-999-85-89\n"
+            "↩️ Дать согласие и оставить заявку"
         )
 
     async def phone_refusal_handler(self, user_id: str):
@@ -222,8 +170,8 @@ class MaxSecretaryBot:
         await self.send_message(
             user_id,
             "✅ Спасибо! Ждем вашего звонка.\n\n"
-            "Наш специалист ответит на все ваши вопросы и поможет найти лучшее решение для вас.",
-            keyboard=self.main_keyboard()
+            "Наш специалист ответит на все ваши вопросы и поможет найти лучшее решение для вас.\n\n"
+            "📝 Записаться на консультацию"
         )
 
     async def return_consent_handler(self, user_id: str):
@@ -244,8 +192,10 @@ class MaxSecretaryBot:
             f"Перед подачей заявки ознакомьтесь с документами и подтвердите:\n\n"
             f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
             f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
-            f"Нажмите обе кнопки ниже для подтверждения:",
-            keyboard=self.consent_keyboard()
+            f"Нажмите обе кнопки ниже для подтверждения:\n"
+            f"✅ Согласен на обработку персональных данных\n"
+            f"✅ Ознакомлен с политикой обработки данных\n"
+            f"❌ Отказать в согласии"
         )
 
     async def send_refusal_application(self, user_id: str):
@@ -276,8 +226,9 @@ class MaxSecretaryBot:
             self.user_states[user_id] = "waiting_client_type"
             await self.send_message(
                 user_id,
-                "✅ Спасибо! Теперь выберите тип клиента:",
-                keyboard=self.client_type_keyboard()
+                "✅ Спасибо! Теперь выберите тип клиента:\n"
+                "👤 Физическое лицо\n"
+                "🏢 Юридическое лицо"
             )
         else:
             confirmed_count = sum([self.user_data[user_id]['consent_pd'], self.user_data[user_id]['consent_policy']])
@@ -303,14 +254,22 @@ class MaxSecretaryBot:
         if "Физическое" in text:
             await self.send_message(
                 user_id,
-                "Выберите категорию вопроса:",
-                keyboard=self.category_keyboard_individual()
+                "Выберите категорию вопроса:\n"
+                "🚗 ДТП\n"
+                "👨‍👩‍👧 Семейное право\n"
+                "🏠 Недвижимость\n"
+                "💼 Трудовые споры\n"
+                "❓ Другое"
             )
         else:
             await self.send_message(
                 user_id,
-                "Выберите категорию вопроса:",
-                keyboard=self.category_keyboard_business()
+                "Выберите категорию вопроса:\n"
+                "📋 Регистрация бизнеса\n"
+                "📝 Договоры и споры\n"
+                "👷 Трудовые вопросы\n"
+                "💰 Налоги и штрафы\n"
+                "❓ Другое"
             )
 
     async def category_handler(self, user_id: str, text: str):
@@ -341,8 +300,9 @@ class MaxSecretaryBot:
         self.user_states[user_id] = "waiting_description_choice"
         await self.send_message(
             user_id,
-            "Кратко опишите ситуацию (необязательно):",
-            keyboard=self.description_keyboard()
+            "Кратко опишите ситуацию (необязательно):\n"
+            "✏️ Написать\n"
+            "➡️ Пропустить"
         )
 
     async def description_choice_handler(self, user_id: str, text: str):
@@ -378,8 +338,8 @@ class MaxSecretaryBot:
         await self.send_message(
             user_id,
             f"✅ Спасибо, {name}! Заявка принята.\n"
-            f"Наш специалист свяжется с вами в ближайшее время.",
-            keyboard=self.main_keyboard()
+            f"Наш специалист свяжется с вами в ближайшее время.\n\n"
+            f"📝 Записаться на консультацию"
         )
 
         # Отправить в рабочий чат
@@ -420,14 +380,10 @@ class MaxSecretaryBot:
         except Exception as e:
             logger.error(f"✗ Ошибка отправки в чат: {e}")
 
-    async def send_message(self, user_id: str, text: str, keyboard: list = None):
-        """Отправить сообщение с клавиатурой"""
+    async def send_message(self, user_id: str, text: str):
+        """Отправить сообщение"""
         try:
-            kwargs = {'user_id': user_id, 'text': text}
-            if keyboard:
-                kwargs['keyboard'] = keyboard
-
-            await self.bot.send_message(**kwargs)
+            await self.bot.send_message(user_id=user_id, text=text)
             logger.info(f"✓ Сообщение отправлено {user_id}")
             return True
         except Exception as e:
