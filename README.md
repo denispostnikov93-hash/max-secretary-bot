@@ -12,7 +12,7 @@
 - 📱 Отправка уведомлений администратору
 - ✔️ Валидация номеров телефонов
 - 🔐 Логирование всех операций
-- 🌐 Webhook API для приема сообщений
+- 🔄 Long Polling для получения сообщений (официальный метод Max API)
 
 ## Требования
 
@@ -74,22 +74,16 @@ docker run -e MAX_BOT_TOKEN=your_token -e MAX_ADMIN_USER_ID=240134783 max-secret
    MAX_BOT_TOKEN=ваш_токен_бота
    MAX_ADMIN_USER_ID=240134783
    MAX_ADMIN_PHONE=+79859998589
-   WEBHOOK_URL=https://your-project.railway.app/webhook
-   WEBHOOK_PORT=8080
    ```
-   ⚠️ **Важно**: Замените `your-project` на ваше имя проекта в Railway
 
-3. **Узнайте публичный URL:**
-   - После деплоя Railway создаст публичный домен вроде: `https://max-secretary-bot-xxx.railway.app`
-   - Замените `WEBHOOK_URL` на этот адрес + `/webhook`
+3. **Бот запустится с Long Polling:**
+   - Бот будет регулярно опрашивать Max API на наличие новых сообщений
+   - Не требует webhook URL или подписки на события
+   - Работает стабильно на Railway
 
-4. **Webhook автоматическая подписка:**
-   - При запуске бот сам попытается подписаться на webhook 
-   - Если это не сработает, подпишитесь вручную в Dev Max
-
-5. **Узнайте свой Max Admin ID:**
+4. **Узнайте свой Max Admin ID:**
    - После деплоя напишите `/my_id` в боте
-   - Получите свой ID и обновите `MAX_ADMIN_USER_ID`
+   - Получите свой ID и обновите `MAX_ADMIN_USER_ID` если нужно
 
 ## Структура файлов
 
@@ -101,28 +95,28 @@ docker run -e MAX_BOT_TOKEN=your_token -e MAX_ADMIN_USER_ID=240134783 max-secret
 
 ## Архитектура
 
-Бот использует HTTP API Max напрямую вместо сторонних библиотек:
-- **Webhook сервер** на aiohttp (порт 8080), маршрут `/webhook`
+Бот использует официальную библиотеку Max Bot API:
+- **Long Polling** - регулярный опрос `/updates` API (метод `Dispatcher.start_polling()`)
 - **Состояния** хранятся в памяти (`user_states`, `user_data`)
-- **Кнопки** - callback-кнопки с payload ID (надёжнее text-сравнения)
+- **Кнопки** - inline keyboard с callback payloads
 - **БД** - SQLite с таблицей `applications`
-- **Обработка** - поддержка `message_created` и `message_callback` webhook обновлений
+- **Обработка** - декораторы `@dp.message_created()` и `@dp.callback_query()` для событий
 
-### Что было исправлено
+### История разработки
 
-**Старая версия (генерация 1)** имела критические ошибки:
-1. ❌ Текстовое сравнение кнопок без эмодзи (button: "📝 Записаться" → user text: "📝 Записаться" → check: "Записаться" → FAILED)
-2. ❌ Отсутствие `.env` файла в директории
-3. ❌ Неправильное парсирование webhook (ожидалось `data['type'] == 'message'`)
-4. ❌ Кнопки типа `"message"` вместо `"callback"` (ненадёжно)
+**Версия 1-3** использовала webhook архитектуру (некорректный подход):
+- ❌ Max API не предоставляет webhook подписку для ботов
+- ❌ Webhook подписка возвращала 401 Unauthorized
+- ❌ Сложная архитектура aiohttp сервера
 
-**Новая версия (полная пересборка)**:
-1. ✅ Callback-кнопки с payload ID (`"type": "callback"`, `"payload": "record"`)
-2. ✅ `.env` файл с реальным токеном
-3. ✅ Правильное парсирование webhook (`message_created`, `message_callback`)
-4. ✅ Полный русский текст, идентичный Telegram боту
-5. ✅ Команда `/my_id` для определения ID администратора
-6. ✅ Все 7 unit-тестов пройдены ✅
+**Версия 4 (текущая - правильная)**:
+- ✅ Используется официальная библиотека `max-botapi-python`
+- ✅ Long Polling метод - стандартный для Max Bot API
+- ✅ Простая архитектура: инициализация → start_polling()
+- ✅ Декораторы для обработчиков (`@dp.message_created()`, `@dp.callback_query()`)
+- ✅ Callback-кнопки с inline keyboard
+- ✅ Полный русский текст, идентичный Telegram боту
+- ✅ Команда `/my_id` для определения ID администратора
 
 ## Поток пользователя
 
