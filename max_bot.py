@@ -16,7 +16,7 @@ import asyncio
 from datetime import datetime
 from aiohttp import web
 import aiohttp
-from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID, PRIVACY_POLICY_URL, AGREEMENT_URL
+from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID, PRIVACY_POLICY_URL, AGREEMENT_URL, WEBHOOK_URL, WEBHOOK_PORT
 from database import db
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ class MaxSecretaryBot:
         self.token = MAX_BOT_TOKEN
         self.admin_id = MAX_ADMIN_USER_ID
         self.api_url = "https://platform-api.max.ru"
+        self.webhook_url = WEBHOOK_URL
         self.user_data = {}       # Хранит данные формы
         self.user_states = {}     # Хранит текущее состояние
 
@@ -81,6 +82,35 @@ class MaxSecretaryBot:
                         return False
         except Exception as e:
             logger.error(f"✗ Ошибка отправки: {e}", exc_info=True)
+            return False
+
+    async def subscribe_webhook(self):
+        """Подписать webhook на события Max API"""
+        try:
+            payload = {
+                "url": self.webhook_url,
+                "updates": ["message_created", "message_callback"]
+            }
+
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {self.token}"}
+                async with session.post(
+                    f"{self.api_url}/subscriptions",
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status in [200, 201]:
+                        logger.info(f"✅ Webhook подписка успешна: {self.webhook_url}")
+                        return True
+                    else:
+                        text = await resp.text()
+                        logger.warning(f"⚠️ Webhook подписка ошибка {resp.status}: {text}")
+                        logger.info(f"ℹ️ Возможно webhook уже зарегистрирован или нужна переподписка вручную")
+                        return False
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка подписки webhook: {e}")
+            logger.info(f"ℹ️ Webhook может быть зарегистрирован вручную в Dev Max")
             return False
 
     # ============ КЛАВИАТУРЫ ============
@@ -547,25 +577,40 @@ async def webhook_handler(request):
 # ============ ЗАПУСК WEBHOOK СЕРВЕРА ============
 
 async def startup():
-    """Инициализация и запуск webhook-сервера на порту 8080"""
+    """Инициализация и запуск webhook-сервера"""
+    # Запустить webhook-сервер
     app = web.Application()
     app.router.add_post('/webhook', webhook_handler)
 
     runner = web.AppRunner(app)
     await runner.setup()
 
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    site = web.TCPSite(runner, '0.0.0.0', WEBHOOK_PORT)
     await site.start()
 
-    logger.info("✓ Webhook-сервер запущен на порту 8080")
-    logger.info(f"✓ Webhook URL: http://0.0.0.0:8080/webhook")
+    logger.info(f"✓ Webhook-сервер запущен на порту {WEBHOOK_PORT}")
+    logger.info(f"✓ Webhook URL: {max_bot.webhook_url}")
     logger.info(f"✓ Max API: {max_bot.api_url}")
+
+    # Подписать webhook на события Max API
+    logger.info("📝 Подписываю webhook на события Max API...")
+    await asyncio.sleep(1)  # Небольшая задержка для стабильности
+    success = await max_bot.subscribe_webhook()
+
+    if success:
+        logger.info("🎉 Бот готов к работе!")
+    else:
+        logger.warning("⚠️ Webhook подписка не удалась, но бот всё равно может работать")
+        logger.warning("ℹ️ Если webhook не регистрируется автоматически:")
+        logger.warning(f"  1. Перейдите в Dev Max: https://dev.max.ru/")
+        logger.warning(f"  2. Создайте/отредактируйте webhook в настройках бота")
+        logger.warning(f"  3. Установите URL: {max_bot.webhook_url}")
 
     try:
         while True:
             await asyncio.sleep(3600)
     except KeyboardInterrupt:
-        logger.info("⏹️  Webhook-сервер остановлен")
+        logger.info("⏹️ Webhook-сервер остановлен")
     except Exception as e:
         logger.error(f"❌ Ошибка при запуске: {e}", exc_info=True)
         raise
