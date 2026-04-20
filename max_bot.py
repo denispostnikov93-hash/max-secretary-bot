@@ -26,6 +26,12 @@ class MaxSecretaryBot:
         self.user_data = {}
         self.user_states = {}
 
+        # Логировать конфигурацию
+        logger.info(f"🔐 MAX_BOT_TOKEN установлен: {bool(self.token)}")
+        logger.info(f"👤 MAX_ADMIN_USER_ID: {self.admin_id}")
+        logger.info(f"🌐 WEBHOOK_URL: {self.webhook_url}")
+        logger.info(f"📡 API URL: {self.api_url}")
+
     def validate_phone(self, phone: str) -> bool:
         cleaned = re.sub(r'[\s\-\(\)]', '', phone)
         return bool(
@@ -67,10 +73,24 @@ class MaxSecretaryBot:
 
     async def subscribe_webhook(self):
         try:
+            # Проверить токен
+            if not self.token or self.token == '':
+                logger.error(f"❌ MAX_BOT_TOKEN не установлен!")
+                return False
+
+            # Обеспечить https://
+            webhook_url = self.webhook_url
+            if not webhook_url.startswith('http'):
+                webhook_url = f"https://{webhook_url}"
+
             payload = {
-                "url": self.webhook_url,
+                "url": webhook_url,
                 "updates": ["message_created", "message_callback"]
             }
+
+            logger.debug(f"📝 Отправляю webhook: {webhook_url}")
+            logger.debug(f"📝 Token (первые 20 символов): {self.token[:20]}...")
+
             async with aiohttp.ClientSession() as session:
                 headers = {"Authorization": f"Bearer {self.token}"}
                 async with session.post(
@@ -79,14 +99,19 @@ class MaxSecretaryBot:
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as resp:
+                    response_text = await resp.text()
+
                     if resp.status in [200, 201]:
-                        logger.info(f"✅ Webhook подписка успешна: {self.webhook_url}")
+                        logger.info(f"✅ Webhook подписка успешна: {webhook_url}")
                         return True
                     else:
-                        logger.warning(f"⚠️ Webhook подписка: статус {resp.status}")
+                        logger.error(f"❌ Webhook подписка ошибка {resp.status}")
+                        logger.error(f"   Ответ: {response_text[:500]}")
                         return False
         except Exception as e:
-            logger.warning(f"⚠️ Ошибка подписки: {e}")
+            logger.error(f"❌ Ошибка подписки: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     # ===== КЛАВИАТУРЫ =====
