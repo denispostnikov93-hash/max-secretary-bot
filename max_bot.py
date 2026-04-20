@@ -1,6 +1,6 @@
 """
 Max бот-секретарь — приём заявок на консультации
-Использует maxapi с Long Polling (без класса, как в примерах)
+Использует maxapi с Long Polling (без attachments)
 """
 import logging
 import re
@@ -33,55 +33,6 @@ def validate_phone(phone: str) -> bool:
     )
 
 
-# ===== КЛАВИАТУРЫ =====
-
-def _get_buttons_main():
-    return [[{"type": "callback", "text": "📝 Записаться на консультацию", "payload": "record"}]]
-
-def _get_buttons_consent():
-    return [
-        [{"type": "callback", "text": "✅ Согласен на обработку персональных данных", "payload": "consent_pd"}],
-        [{"type": "callback", "text": "✅ Ознакомлен с политикой обработки данных", "payload": "consent_policy"}],
-        [{"type": "callback", "text": "❌ Отказать в согласии", "payload": "refuse"}]
-    ]
-
-def _get_buttons_client_type():
-    return [[
-        {"type": "callback", "text": "👤 Физическое лицо", "payload": "physical"},
-        {"type": "callback", "text": "🏢 Юридическое лицо", "payload": "legal"}
-    ]]
-
-def _get_buttons_individual_categories():
-    return [
-        [{"type": "callback", "text": "🚗 ДТП", "payload": "cat_dtp"}],
-        [{"type": "callback", "text": "👨‍👩‍👧 Семейное право", "payload": "cat_family"}],
-        [{"type": "callback", "text": "🏠 Недвижимость", "payload": "cat_realty"}],
-        [{"type": "callback", "text": "⚖️ Трудовые споры", "payload": "cat_work"}],
-        [{"type": "callback", "text": "❓ Другое", "payload": "cat_other"}]
-    ]
-
-def _get_buttons_business_categories():
-    return [
-        [{"type": "callback", "text": "📋 Регистрация бизнеса", "payload": "cat_reg"}],
-        [{"type": "callback", "text": "📝 Договоры и споры", "payload": "cat_contracts"}],
-        [{"type": "callback", "text": "👔 Трудовые вопросы", "payload": "cat_hr"}],
-        [{"type": "callback", "text": "💰 Налоги и штрафы", "payload": "cat_tax"}],
-        [{"type": "callback", "text": "❓ Другое", "payload": "cat_other"}]
-    ]
-
-def _get_buttons_description():
-    return [[
-        {"type": "callback", "text": "✏️ Написать", "payload": "write_desc"},
-        {"type": "callback", "text": "➡️ Пропустить", "payload": "skip_desc"}
-    ]]
-
-def _get_buttons_refusal():
-    return [
-        [{"type": "callback", "text": "☎️ Позвонить: 8-495-999-85-89", "payload": "call"}],
-        [{"type": "callback", "text": "↩️ Дать согласие и оставить заявку", "payload": "back_consent"}]
-    ]
-
-
 async def send_admin_message(text: str):
     """Отправить сообщение админу"""
     try:
@@ -104,11 +55,15 @@ async def handle_start(message: MessageCreated):
     }
     user_states[user_id] = None
 
-    await message.message.answer(
-        text="👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\n"
-             "Мы поможем защитить ваши права. Для записи на консультацию нажмите кнопку.",
-        attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_main()}}]
+    text = (
+        "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\n"
+        "Мы поможем защитить ваши права.\n\n"
+        "Для записи на консультацию введите свой выбор:\n"
+        "1 - Записаться\n"
+        "2 - Помощь"
     )
+
+    await message.message.answer(text=text)
     logger.info(f"📨 /start от {user_id}")
 
 
@@ -136,6 +91,102 @@ async def handle_message(message: MessageCreated):
             'client_type': None, 'category': None, 'name': None, 'phone': None
         }
 
+    # Выбор действия
+    if text == "1":
+        data = user_data[user_id]
+        if not data.get('in_consent_step'):
+            data['in_consent_step'] = True
+            msg = (
+                f"📋 Чтобы продолжить, прочитайте и подтвердите:\n\n"
+                f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
+                f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
+                f"Введите:\n"
+                f"да - Я согласен\n"
+                f"нет - Отказать"
+            )
+            await message.message.answer(text=msg)
+        return
+
+    if text == "2":
+        await message.message.answer(text="☎️ Позвоните нам: 8-495-999-85-89")
+        return
+
+    # Согласие
+    if text.lower() in ["да", "yes", "y", "согласен"]:
+        data = user_data[user_id]
+        if data.get('in_consent_step'):
+            data['consent_pd'] = True
+            data['consent_policy'] = True
+            data['in_consent_step'] = False
+            user_states[user_id] = "waiting_client_type"
+            msg = (
+                "✅ Спасибо! Теперь выберите тип клиента:\n\n"
+                "1 - Физическое лицо\n"
+                "2 - Юридическое лицо"
+            )
+            await message.message.answer(text=msg)
+        return
+
+    # Отказ
+    if text.lower() in ["нет", "no", "n", "отказ"]:
+        await send_refusal_notification(user_id)
+        user_states[user_id] = None
+        user_data[user_id] = {}
+        msg = (
+            "😔 Мы уважаем ваше решение.\n\n"
+            "☎️ Позвоните нам: 8-495-999-85-89 для бесплатной консультации"
+        )
+        await message.message.answer(text=msg)
+        return
+
+    # Выбор типа клиента
+    if user_states.get(user_id) == "waiting_client_type":
+        if text == "1":
+            user_data[user_id]['client_type'] = "Физическое лицо"
+            user_states[user_id] = "waiting_category_individual"
+            msg = (
+                "Выберите категорию вопроса:\n\n"
+                "1 - ДТП\n"
+                "2 - Семейное право\n"
+                "3 - Недвижимость\n"
+                "4 - Трудовые споры\n"
+                "5 - Другое"
+            )
+            await message.message.answer(text=msg)
+        elif text == "2":
+            user_data[user_id]['client_type'] = "Юридическое лицо"
+            user_states[user_id] = "waiting_category_business"
+            msg = (
+                "Выберите категорию вопроса:\n\n"
+                "1 - Регистрация бизнеса\n"
+                "2 - Договоры и споры\n"
+                "3 - Трудовые вопросы\n"
+                "4 - Налоги и штрафы\n"
+                "5 - Другое"
+            )
+            await message.message.answer(text=msg)
+        return
+
+    # Категория физлица
+    if user_states.get(user_id) == "waiting_category_individual":
+        cat_map = {"1": "ДТП", "2": "Семейное право", "3": "Недвижимость",
+                   "4": "Трудовые споры", "5": "Другое"}
+        if text in cat_map:
+            user_data[user_id]['category'] = cat_map[text]
+            user_states[user_id] = "waiting_name"
+            await message.message.answer(text="Как вас зовут?")
+        return
+
+    # Категория юрлица
+    if user_states.get(user_id) == "waiting_category_business":
+        cat_map = {"1": "Регистрация бизнеса", "2": "Договоры и споры",
+                   "3": "Трудовые вопросы", "4": "Налоги и штрафы", "5": "Другое"}
+        if text in cat_map:
+            user_data[user_id]['category'] = cat_map[text]
+            user_states[user_id] = "waiting_name"
+            await message.message.answer(text="Как вас зовут?")
+        return
+
     # Ожидание имени
     if user_states.get(user_id) == "waiting_name":
         user_data[user_id]['name'] = text
@@ -154,10 +205,21 @@ async def handle_message(message: MessageCreated):
 
         user_data[user_id]['phone'] = text
         user_states[user_id] = "waiting_description_choice"
-        await message.message.answer(
-            text="Кратко опишите ситуацию (необязательно):",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_description()}}]
+        msg = (
+            "Кратко опишите ситуацию (необязательно):\n\n"
+            "1 - Написать описание\n"
+            "2 - Пропустить"
         )
+        await message.message.answer(text=msg)
+        return
+
+    # Выбор описания
+    if user_states.get(user_id) == "waiting_description_choice":
+        if text == "1":
+            user_states[user_id] = "waiting_description"
+            await message.message.answer(text="Опишите вашу ситуацию:")
+        elif text == "2":
+            await submit_application(user_id, description=None)
         return
 
     # Ожидание описания
@@ -168,151 +230,8 @@ async def handle_message(message: MessageCreated):
 
 @dp.message_callback()
 async def handle_callback(callback: MessageCallback):
-    user_id = str(callback.callback.user.user_id)
-    payload = callback.callback.payload
-
-    logger.info(f"📘 Callback от {user_id}: {payload}")
-
-    if user_id not in user_data:
-        user_data[user_id] = {
-            'consent_pd': False, 'consent_policy': False, 'in_consent_step': False,
-            'client_type': None, 'category': None, 'name': None, 'phone': None
-        }
-
-    # Запись на консультацию
-    if payload == "record":
-        user_data[user_id]['in_consent_step'] = True
-        await callback.answer_callback()
-        await bot.send_message(
-            chat_id=user_id,
-            text=f"📋 Чтобы продолжить, прочитайте и подтвердите:\n\n"
-                 f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
-                 f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
-                 f"Нажмите обе кнопки ниже для подтверждения:",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_consent()}}]
-        )
-        return
-
-    # Согласие ПД
-    if payload == "consent_pd":
-        if user_data[user_id].get('in_consent_step'):
-            user_data[user_id]['consent_pd'] = True
-            await callback.answer_callback()
-            await check_consents(user_id)
-        return
-
-    # Согласие политика
-    if payload == "consent_policy":
-        if user_data[user_id].get('in_consent_step'):
-            user_data[user_id]['consent_policy'] = True
-            await callback.answer_callback()
-            await check_consents(user_id)
-        return
-
-    # Отказ
-    if payload == "refuse":
-        await callback.answer_callback()
-        await send_refusal_notification(user_id)
-        user_states[user_id] = None
-        user_data[user_id] = {}
-        await bot.send_message(
-            chat_id=user_id,
-            text="😔 Мы уважаем ваше решение и соблюдаем закон о защите персональных данных.\n\n"
-                 "Без согласия на обработку ПД мы не можем продолжить стандартный процесс консультации.\n\n"
-                 "Выберите один из вариантов:\n"
-                 "• Позвоните нам по номеру 8-495-999-85-89 и получите бесплатную консультацию\n"
-                 "• Или дайте согласие и оставьте заявку через бота",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_refusal()}}]
-        )
-        return
-
-    # Тип клиента
-    if payload == "physical":
-        user_data[user_id]['client_type'] = "Физическое лицо"
-        user_states[user_id] = "waiting_category"
-        await callback.answer_callback()
-        await bot.send_message(
-            chat_id=user_id,
-            text="Выберите категорию вопроса:",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_individual_categories()}}]
-        )
-        return
-
-    if payload == "legal":
-        user_data[user_id]['client_type'] = "Юридическое лицо"
-        user_states[user_id] = "waiting_category"
-        await callback.answer_callback()
-        await bot.send_message(
-            chat_id=user_id,
-            text="Выберите категорию вопроса:",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_business_categories()}}]
-        )
-        return
-
-    # Категория
-    cat_map = {
-        "cat_dtp": "ДТП", "cat_family": "Семейное право", "cat_realty": "Недвижимость",
-        "cat_work": "Трудовые споры", "cat_other": "Другое",
-        "cat_reg": "Регистрация бизнеса", "cat_contracts": "Договоры и споры",
-        "cat_hr": "Трудовые вопросы", "cat_tax": "Налоги и штрафы"
-    }
-
-    if payload in cat_map:
-        user_data[user_id]['category'] = cat_map[payload]
-        user_states[user_id] = "waiting_name"
-        await callback.answer_callback()
-        await bot.send_message(chat_id=user_id, text="Как вас зовут?")
-        return
-
-    # Описание
-    if payload == "write_desc":
-        user_states[user_id] = "waiting_description"
-        await callback.answer_callback()
-        await bot.send_message(chat_id=user_id, text="Опишите вашу ситуацию:")
-        return
-
-    if payload == "skip_desc":
-        await callback.answer_callback()
-        await submit_application(user_id, description=None)
-        return
-
-    if payload == "call":
-        await callback.answer_callback()
-        await bot.send_message(
-            chat_id=user_id,
-            text="✅ Спасибо! Ждем вашего звонка.\n\n"
-                 "Наш специалист ответит на все ваши вопросы и поможет найти лучшее решение для вас.",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_main()}}]
-        )
-        return
-
-    if payload == "back_consent":
-        user_data[user_id] = {
-            'consent_pd': False, 'consent_policy': False, 'in_consent_step': True,
-            'client_type': None, 'category': None, 'name': None, 'phone': None
-        }
-        await callback.answer_callback()
-        await bot.send_message(
-            chat_id=user_id,
-            text=f"📋 Чтобы продолжить, прочитайте и подтвердите:\n\n"
-                 f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
-                 f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
-                 f"Нажмите обе кнопки ниже для подтверждения:",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_consent()}}]
-        )
-        return
-
-
-async def check_consents(user_id: str):
-    data = user_data[user_id]
-    if data['consent_pd'] and data['consent_policy']:
-        data['in_consent_step'] = False
-        user_states[user_id] = "waiting_client_type"
-        await bot.send_message(
-            chat_id=user_id,
-            text="✅ Спасибо! Теперь выберите тип клиента:",
-            attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_client_type()}}]
-        )
+    logger.info(f"📘 Callback от {callback.callback.user.user_id}: {callback.callback.payload}")
+    await callback.answer_callback()
 
 
 async def send_refusal_notification(user_id: str):
@@ -350,8 +269,7 @@ async def submit_application(user_id: str, description=None):
     await bot.send_message(
         chat_id=user_id,
         text=f"✅ Спасибо, {name}! Заявка принята.\n"
-             f"Наш специалист свяжется с вами в ближайшее время.",
-        attachments=[{"type": "inline_keyboard", "payload": {"buttons": _get_buttons_main()}}]
+             f"Наш специалист свяжется с вами в ближайшее время."
     )
 
     try:
