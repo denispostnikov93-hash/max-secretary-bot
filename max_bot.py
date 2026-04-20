@@ -412,24 +412,28 @@ async def webhook_handler(request):
             updates = [updates]
 
         for update in updates:
-            update_type = update.get('update_type', '')
+            try:
+                update_type = update.get('update_type', '')
 
-            if update_type == 'message_created':
-                message = update.get('message', {})
-                sender = message.get('sender', {})
-                user_id = sender.get('user_id')
-                body = message.get('body', {})
-                text = body.get('text', '')
-                if user_id and text:
-                    await max_bot.handle_message(user_id, text)
+                if update_type == 'message_created':
+                    message = update.get('message', {})
+                    sender = message.get('sender', {})
+                    user_id = sender.get('user_id')
+                    body = message.get('body', {})
+                    text = body.get('text', '')
+                    if user_id and text:
+                        await max_bot.handle_message(user_id, text)
 
-            elif update_type == 'message_callback':
-                callback = update.get('callback', {})
-                user = callback.get('user', {})
-                user_id = user.get('user_id')
-                payload_str = callback.get('payload', '')
-                if user_id and payload_str:
-                    await max_bot.handle_callback(user_id, payload_str)
+                elif update_type == 'message_callback':
+                    callback = update.get('callback', {})
+                    user = callback.get('user', {})
+                    user_id = user.get('user_id')
+                    payload_str = callback.get('payload', '')
+                    if user_id and payload_str:
+                        await max_bot.handle_callback(user_id, payload_str)
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка update: {e}")
 
         return web.json_response({'status': 'ok'})
     except Exception as e:
