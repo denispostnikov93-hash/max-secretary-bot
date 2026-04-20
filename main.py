@@ -3,8 +3,10 @@ Max бот-секретарь
 """
 import asyncio
 import logging
+from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID
 from database import db
 from max_bot import max_bot
+from max_botapi import Dispatcher
 
 logging.basicConfig(
     level=logging.INFO,
@@ -12,10 +14,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def validate_config():
+    """Проверить конфигурацию"""
+    if not MAX_BOT_TOKEN:
+        logger.error("❌ MAX_BOT_TOKEN не установлен!")
+        return False
+    if not MAX_ADMIN_USER_ID:
+        logger.error("❌ MAX_ADMIN_USER_ID не установлен!")
+        return False
+    return True
+
 async def main():
     logger.info("=" * 60)
     logger.info("🤖 MAX БОТ-СЕКРЕТАРЬ")
     logger.info("=" * 60)
+
+    if not validate_config():
+        logger.error("❌ Конфигурация неполная. Проверь переменные окружения.")
+        return
 
     try:
         logger.info("📦 Инициализирую БД...")
@@ -26,7 +42,18 @@ async def main():
         logger.info("✓ Бот подключен к Max")
         logger.info("=" * 60)
 
-        await max_bot.start()
+        # Инициализировать диспетчер
+        dp = Dispatcher(MAX_BOT_TOKEN)
+
+        # Регистрировать обработчик сообщений
+        @dp.message_created()
+        async def handle_message(data):
+            user_id = data.get('from_id')
+            text = data.get('text', '')
+            await max_bot.handle_message(user_id, text)
+
+        # Запустить бота
+        await dp.start_polling()
 
     except KeyboardInterrupt:
         logger.info("⏹️ Бот остановлен")
