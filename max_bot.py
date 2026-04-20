@@ -73,10 +73,14 @@ class MaxSecretaryBot:
 
     async def subscribe_webhook(self):
         try:
-            # Проверить токен
-            if not self.token or self.token == '':
-                logger.error(f"❌ MAX_BOT_TOKEN не установлен!")
+            # Проверить токен - КРИТИЧНО
+            if not self.token or len(self.token.strip()) == 0:
+                logger.error(f"❌ MAX_BOT_TOKEN НЕ УСТАНОВЛЕН или пуст!")
+                logger.error(f"   Проверь Railway → Settings → Environment Variables")
+                logger.error(f"   MAX_BOT_TOKEN должен быть заполнен")
                 return False
+
+            logger.info(f"🔐 Токен длина: {len(self.token)} символов")
 
             # Обеспечить https://
             webhook_url = self.webhook_url
@@ -88,11 +92,14 @@ class MaxSecretaryBot:
                 "updates": ["message_created", "message_callback"]
             }
 
-            logger.debug(f"📝 Отправляю webhook: {webhook_url}")
-            logger.debug(f"📝 Token (первые 20 символов): {self.token[:20]}...")
+            logger.info(f"📝 Отправляю webhook: {webhook_url}")
+            logger.info(f"🔐 Authorization header: Bearer [токен из {len(self.token)} символов]")
 
             async with aiohttp.ClientSession() as session:
+                # Попробовать два варианта передачи токена
                 headers = {"Authorization": f"Bearer {self.token}"}
+
+                # Вариант 1: Bearer token в header (стандарт)
                 async with session.post(
                     f"{self.api_url}/subscriptions",
                     json=payload,
@@ -100,14 +107,35 @@ class MaxSecretaryBot:
                     timeout=aiohttp.ClientTimeout(total=10)
                 ) as resp:
                     response_text = await resp.text()
+                    logger.info(f"📊 Статус: {resp.status}, Ответ: {response_text[:200]}")
 
                     if resp.status in [200, 201]:
                         logger.info(f"✅ Webhook подписка успешна: {webhook_url}")
                         return True
+                    elif resp.status == 401:
+                        logger.error(f"❌ 401 Unauthorized - проверь MAX_BOT_TOKEN")
+                        logger.error(f"   Полный ответ: {response_text}")
+
+                        # Вариант 2: токен в payload (на случай если API требует это)
+                        logger.info(f"📝 Пробую альтернативный способ - токен в body...")
+                        payload_with_token = payload.copy()
+                        payload_with_token["access_token"] = self.token
+
+                        async with session.post(
+                            f"{self.api_url}/subscriptions",
+                            json=payload_with_token,
+                            timeout=aiohttp.ClientTimeout(total=10)
+                        ) as resp2:
+                            response_text2 = await resp2.text()
+                            if resp2.status in [200, 201]:
+                                logger.info(f"✅ Webhook подписка успешна (вариант 2): {webhook_url}")
+                                return True
+                        return False
                     else:
                         logger.error(f"❌ Webhook подписка ошибка {resp.status}")
-                        logger.error(f"   Ответ: {response_text[:500]}")
+                        logger.error(f"   Полный ответ: {response_text}")
                         return False
+
         except Exception as e:
             logger.error(f"❌ Ошибка подписки: {e}")
             import traceback
