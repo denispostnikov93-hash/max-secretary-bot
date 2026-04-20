@@ -6,7 +6,6 @@ import logging
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID
 from database import db
 from max_bot import max_bot
-from max_botapi import Dispatcher
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,18 +41,8 @@ async def main():
         logger.info("✓ Бот подключен к Max")
         logger.info("=" * 60)
 
-        # Инициализировать диспетчер
-        dp = Dispatcher(MAX_BOT_TOKEN)
-
-        # Регистрировать обработчик сообщений
-        @dp.message_created()
-        async def handle_message(data):
-            user_id = data.get('from_id')
-            text = data.get('text', '')
-            await max_bot.handle_message(user_id, text)
-
         # Запустить бота
-        await dp.start_polling()
+        await max_bot.start()
 
     except KeyboardInterrupt:
         logger.info("⏹️ Бот остановлен")

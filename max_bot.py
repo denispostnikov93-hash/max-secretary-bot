@@ -1,11 +1,12 @@
 """
 Max бот-секретарь для приема заявок
-Использует max-botapi-python (официальная библиотека)
+Использует umaxbot (aiogram-style async framework)
 """
 import logging
 import re
 from datetime import datetime
-from max_botapi import BotAPI
+from umaxbot import Bot, Router, types
+from umaxbot.filters import Command
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID, PRIVACY_POLICY_URL, AGREEMENT_URL
 from database import db
 
@@ -13,9 +14,67 @@ logger = logging.getLogger(__name__)
 
 class MaxSecretaryBot:
     def __init__(self):
-        self.api = BotAPI(MAX_BOT_TOKEN)
+        self.bot = Bot(token=MAX_BOT_TOKEN)
+        self.router = Router()
+        self.setup_handlers()
         self.user_data = {}
         self.user_states = {}
+
+    def setup_handlers(self):
+        """Настроить обработчики сообщений"""
+        @self.router.message()
+        async def handle_message(message: types.Message):
+            user_id = str(message.from_id)
+            text = (message.text or "").strip()
+
+            if not user_id or not text:
+                return
+
+            logger.info(f"User {user_id}: {text[:50]}")
+
+            try:
+                # /start команда
+                if text == "/start":
+                    await self.cmd_start(user_id)
+                # Согласия
+                elif text == "Согласен на обработку ПД":
+                    await self.consent_pd_handler(user_id)
+                elif text == "Ознакомлен с политикой":
+                    await self.consent_policy_handler(user_id)
+                elif text == "Отказать":
+                    await self.consent_refusal_handler(user_id)
+                # Запись на консультацию
+                elif text == "Записаться на консультацию":
+                    await self.btn_record(user_id)
+                # Тип клиента
+                elif self.user_states.get(user_id) == "waiting_client_type" and text in ["Физическое лицо", "Юридическое лицо"]:
+                    await self.client_type_handler(user_id, text)
+                # Категория
+                elif self.user_states.get(user_id) == "waiting_category":
+                    await self.category_handler(user_id, text)
+                # Имя
+                elif self.user_states.get(user_id) == "waiting_name":
+                    await self.name_handler(user_id, text)
+                # Телефон
+                elif self.user_states.get(user_id) == "waiting_phone":
+                    await self.phone_handler(user_id, text)
+                # Описание - выбор
+                elif self.user_states.get(user_id) == "waiting_description_choice" and text in ["Написать", "Пропустить"]:
+                    await self.description_choice_handler(user_id, text)
+                # Описание - текст
+                elif self.user_states.get(user_id) == "waiting_description":
+                    await self.description_handler(user_id, text)
+                # Обработка отказа
+                elif text == "Позвонить":
+                    await self.phone_refusal_handler(user_id)
+                elif text == "Дать согласие":
+                    await self.return_consent_handler(user_id)
+                else:
+                    logger.warning(f"Unhandled message from {user_id}: '{text}' in state {self.user_states.get(user_id)}")
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка: {e}", exc_info=True)
+                await self.send_message(user_id, "❌ Ошибка. Повторите попытку.")
 
     def validate_phone(self, phone: str) -> bool:
         """Проверить корректность номера телефона"""
@@ -23,60 +82,6 @@ class MaxSecretaryBot:
         if re.match(r'^\+?7\d{9,10}$', cleaned) or re.match(r'^\+?\d{10,15}$', cleaned):
             return True
         return False
-
-    async def handle_message(self, user_id: str, text: str):
-        """Обработать входящее сообщение"""
-        if not user_id or not text:
-            return
-
-        text = text.strip()
-        logger.info(f"User {user_id}: {text[:50]}")
-
-        try:
-            # /start команда
-            if text == "/start":
-                await self.cmd_start(user_id)
-            # Согласия
-            elif text == "Согласен на обработку ПД":
-                await self.consent_pd_handler(user_id)
-            elif text == "Ознакомлен с политикой":
-                await self.consent_policy_handler(user_id)
-            elif text == "Отказать":
-                await self.consent_refusal_handler(user_id)
-            # Запись на консультацию
-            elif text == "Записаться на консультацию":
-                await self.btn_record(user_id)
-            # Тип клиента
-            elif self.user_states.get(user_id) == "waiting_client_type":
-                if text in ["Физическое лицо", "Юридическое лицо"]:
-                    await self.client_type_handler(user_id, text)
-            # Категория
-            elif self.user_states.get(user_id) == "waiting_category":
-                await self.category_handler(user_id, text)
-            # Имя
-            elif self.user_states.get(user_id) == "waiting_name":
-                await self.name_handler(user_id, text)
-            # Телефон
-            elif self.user_states.get(user_id) == "waiting_phone":
-                await self.phone_handler(user_id, text)
-            # Описание - выбор
-            elif self.user_states.get(user_id) == "waiting_description_choice":
-                if text in ["Написать", "Пропустить"]:
-                    await self.description_choice_handler(user_id, text)
-            # Описание - текст
-            elif self.user_states.get(user_id) == "waiting_description":
-                await self.description_handler(user_id, text)
-            # Обработка отказа
-            elif text == "Позвонить":
-                await self.phone_refusal_handler(user_id)
-            elif text == "Дать согласие":
-                await self.return_consent_handler(user_id)
-            else:
-                logger.warning(f"Unhandled message from {user_id}: '{text}' in state {self.user_states.get(user_id)}")
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка: {e}", exc_info=True)
-            await self.send_message(user_id, "❌ Ошибка. Повторите попытку.")
 
     async def cmd_start(self, user_id: str):
         """Команда /start"""
@@ -93,8 +98,8 @@ class MaxSecretaryBot:
         self.user_states[user_id] = None
 
         keyboard = {
-            "inline_keyboard": [
-                [{"text": "Записаться на консультацию", "type": "message"}]
+            "buttons": [
+                [{"text": "Записаться на консультацию", "type": "default"}]
             ]
         }
 
@@ -118,10 +123,10 @@ class MaxSecretaryBot:
         logger.info(f"User {user_id} started application process")
 
         keyboard = {
-            "inline_keyboard": [
-                [{"text": "Согласен на обработку ПД", "type": "message"}],
-                [{"text": "Ознакомлен с политикой", "type": "message"}],
-                [{"text": "Отказать", "type": "message"}]
+            "buttons": [
+                [{"text": "Согласен на обработку ПД", "type": "default"}],
+                [{"text": "Ознакомлен с политикой", "type": "default"}],
+                [{"text": "Отказать", "type": "default"}]
             ]
         }
 
@@ -161,9 +166,9 @@ class MaxSecretaryBot:
         self.user_data[user_id] = {}
 
         keyboard = {
-            "inline_keyboard": [
-                [{"text": "Позвонить", "type": "message"}],
-                [{"text": "Дать согласие", "type": "message"}]
+            "buttons": [
+                [{"text": "Позвонить", "type": "default"}],
+                [{"text": "Дать согласие", "type": "default"}]
             ]
         }
 
@@ -181,8 +186,8 @@ class MaxSecretaryBot:
     async def phone_refusal_handler(self, user_id: str):
         """Обработка позвонить после отказа"""
         keyboard = {
-            "inline_keyboard": [
-                [{"text": "Записаться на консультацию", "type": "message"}]
+            "buttons": [
+                [{"text": "Записаться на консультацию", "type": "default"}]
             ]
         }
 
@@ -207,10 +212,10 @@ class MaxSecretaryBot:
             self.user_data[user_id]['in_consent_step'] = True
 
         keyboard = {
-            "inline_keyboard": [
-                [{"text": "Согласен на обработку ПД", "type": "message"}],
-                [{"text": "Ознакомлен с политикой", "type": "message"}],
-                [{"text": "Отказать", "type": "message"}]
+            "buttons": [
+                [{"text": "Согласен на обработку ПД", "type": "default"}],
+                [{"text": "Ознакомлен с политикой", "type": "default"}],
+                [{"text": "Отказать", "type": "default"}]
             ]
         }
 
@@ -235,7 +240,7 @@ class MaxSecretaryBot:
                 f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
                 f"{'━' * 30}"
             )
-            await self.api.send_message(MAX_ADMIN_USER_ID, message_text)
+            await self.bot.send_message(MAX_ADMIN_USER_ID, message_text)
             logger.info(f"✓ Заявка об отказе отправлена")
         except Exception as e:
             logger.error(f"✗ Ошибка отправки заявки об отказе: {e}")
@@ -248,8 +253,8 @@ class MaxSecretaryBot:
             self.user_states[user_id] = "waiting_client_type"
 
             keyboard = {
-                "inline_keyboard": [
-                    [{"text": "Физическое лицо", "type": "message"}, {"text": "Юридическое лицо", "type": "message"}]
+                "buttons": [
+                    [{"text": "Физическое лицо", "type": "default"}, {"text": "Юридическое лицо", "type": "default"}]
                 ]
             }
 
@@ -281,22 +286,22 @@ class MaxSecretaryBot:
 
         if "Физическое" in text:
             keyboard = {
-                "inline_keyboard": [
-                    [{"text": "ДТП", "type": "message"}],
-                    [{"text": "Семейное право", "type": "message"}],
-                    [{"text": "Недвижимость", "type": "message"}],
-                    [{"text": "Трудовые споры", "type": "message"}],
-                    [{"text": "Другое", "type": "message"}]
+                "buttons": [
+                    [{"text": "ДТП", "type": "default"}],
+                    [{"text": "Семейное право", "type": "default"}],
+                    [{"text": "Недвижимость", "type": "default"}],
+                    [{"text": "Трудовые споры", "type": "default"}],
+                    [{"text": "Другое", "type": "default"}]
                 ]
             }
         else:
             keyboard = {
-                "inline_keyboard": [
-                    [{"text": "Регистрация бизнеса", "type": "message"}],
-                    [{"text": "Договоры и споры", "type": "message"}],
-                    [{"text": "Трудовые вопросы", "type": "message"}],
-                    [{"text": "Налоги и штрафы", "type": "message"}],
-                    [{"text": "Другое", "type": "message"}]
+                "buttons": [
+                    [{"text": "Регистрация бизнеса", "type": "default"}],
+                    [{"text": "Договоры и споры", "type": "default"}],
+                    [{"text": "Трудовые вопросы", "type": "default"}],
+                    [{"text": "Налоги и штрафы", "type": "default"}],
+                    [{"text": "Другое", "type": "default"}]
                 ]
             }
 
@@ -328,8 +333,8 @@ class MaxSecretaryBot:
         self.user_states[user_id] = "waiting_description_choice"
 
         keyboard = {
-            "inline_keyboard": [
-                [{"text": "Написать", "type": "message"}, {"text": "Пропустить", "type": "message"}]
+            "buttons": [
+                [{"text": "Написать", "type": "default"}, {"text": "Пропустить", "type": "default"}]
             ]
         }
 
@@ -370,8 +375,8 @@ class MaxSecretaryBot:
 
         # Отправить благодарность
         keyboard = {
-            "inline_keyboard": [
-                [{"text": "Записаться на консультацию", "type": "message"}]
+            "buttons": [
+                [{"text": "Записаться на консультацию", "type": "default"}]
             ]
         }
 
@@ -412,7 +417,7 @@ class MaxSecretaryBot:
                 f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
                 f"{'━' * 30}"
             )
-            await self.api.send_message(MAX_ADMIN_USER_ID, message_text)
+            await self.bot.send_message(MAX_ADMIN_USER_ID, message_text)
             logger.info(f"✓ Заявка отправлена в чат")
         except Exception as e:
             logger.error(f"✗ Ошибка отправки в чат: {e}")
@@ -420,14 +425,20 @@ class MaxSecretaryBot:
     async def send_message(self, user_id: str, text: str, keyboard=None):
         """Отправить сообщение"""
         try:
+            kwargs = {"user_id": user_id, "text": text}
             if keyboard:
-                await self.api.send_message(user_id, text, attachments={"inline_keyboard": keyboard["inline_keyboard"]})
-            else:
-                await self.api.send_message(user_id, text)
+                kwargs["keyboard"] = keyboard
+            await self.bot.send_message(**kwargs)
             logger.info(f"✓ Сообщение отправлено {user_id}")
             return True
         except Exception as e:
             logger.error(f"✗ Ошибка отправки: {e}")
             return False
+
+    async def start(self):
+        """Запустить бота"""
+        logger.info("Max бот-секретарь запущен и слушает команды")
+        self.bot.dispatcher.include_router(self.router)
+        await self.bot.start_polling()
 
 max_bot = MaxSecretaryBot()
