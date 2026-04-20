@@ -1,46 +1,79 @@
 """
-Max бот-секретарь для приема заявок
-Использует umaxbot с InlineKeyboard и FSM как Telegram бот
+Max бот-секретарь - используя HTTP API Max напрямую
+Полная функциональность как Telegram бот
 """
 import logging
 import re
+import json
+import asyncio
 from datetime import datetime
-from umaxbot import Bot, Dispatcher, types
-from umaxbot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-from umaxbot.fsm.context import FSMContext
-from umaxbot.fsm.state import State, StatesGroup
+from aiohttp import web
+import aiohttp
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID, PRIVACY_POLICY_URL, AGREEMENT_URL
 from database import db
 
 logger = logging.getLogger(__name__)
 
-# === STATES ===
-class ApplicationForm(StatesGroup):
-    waiting_consent_pd = State()
-    waiting_consent_policy = State()
-    waiting_client_type = State()
-    waiting_category = State()
-    waiting_name = State()
-    waiting_phone = State()
-    waiting_description_choice = State()
-    waiting_description = State()
-
-# === BOT ===
 class MaxSecretaryBot:
     def __init__(self):
-        self.bot = Bot(token=MAX_BOT_TOKEN)
-        self.dp = Dispatcher(self.bot)
-        self.setup_handlers()
+        self.token = MAX_BOT_TOKEN
+        self.admin_id = MAX_ADMIN_USER_ID
+        self.api_url = "https://platform-api.max.ru"
         self.user_data = {}
+        self.user_states = {}
 
-    def setup_handlers(self):
-        """Настроить обработчики"""
-        @self.dp.message()
-        async def cmd_start(message: Message, state: FSMContext):
-            """Команда /start"""
-            if message.text == "/start":
-                user_id = message.sender.id
-                await state.clear()
+    def validate_phone(self, phone: str) -> bool:
+        """Проверить корректность номера телефона"""
+        cleaned = re.sub(r'[\s\-\(\)]', '', phone)
+        if re.match(r'^\+?7\d{9,10}$', cleaned) or re.match(r'^\+?\d{10,15}$', cleaned):
+            return True
+        return False
+
+    async def send_message(self, user_id: str, text: str, keyboard=None):
+        """Отправить сообщение в Max"""
+        try:
+            payload = {
+                "user_id": user_id,
+                "text": text,
+                "format": "markdown"
+            }
+
+            if keyboard:
+                payload["attachments"] = [{
+                    "type": "inline_keyboard",
+                    "inline_keyboard": keyboard
+                }]
+
+            async with aiohttp.ClientSession() as session:
+                headers = {"Authorization": f"Bearer {self.token}"}
+                async with session.post(
+                    f"{self.api_url}/messages",
+                    json=payload,
+                    headers=headers
+                ) as resp:
+                    if resp.status == 200:
+                        logger.info(f"✓ Сообщение отправлено {user_id}")
+                        return True
+                    else:
+                        logger.error(f"✗ Ошибка отправки: {resp.status}")
+                        return False
+        except Exception as e:
+            logger.error(f"✗ Ошибка: {e}")
+            return False
+
+    async def handle_message(self, data: dict):
+        """Обработать входящее сообщение"""
+        try:
+            user_id = data.get("from_id")
+            text = data.get("text", "").strip()
+
+            if not user_id or not text:
+                return
+
+            logger.info(f"User {user_id}: {text[:50]}")
+
+            # /start команда
+            if text == "/start":
                 self.user_data[user_id] = {
                     'consent_pd': False,
                     'consent_policy': False,
@@ -51,278 +84,201 @@ class MaxSecretaryBot:
                     'phone': None,
                     'description': None
                 }
+                self.user_states[user_id] = None
 
-                keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📝 Записаться на консультацию", callback_data="record")]
-                ])
+                keyboard = [[{"text": "📝 Записаться на консультацию", "type": "message", "payload": "record"}]]
 
-                await self.bot.send_message(
-                    chat_id=user_id,
-                    text="👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\n"
-                         "Мы поможем защитить ваши права. Для записи на консультацию нажмите кнопку.",
-                    reply_markup=keyboard,
-                    format="markdown"
+                await self.send_message(
+                    user_id,
+                    "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\n"
+                    "Мы поможем защитить ваши права. Для записи на консультацию нажмите кнопку.",
+                    keyboard
                 )
-                logger.info(f"User {user_id} started")
 
-        @self.dp.callback()
-        async def handle_callback(cb: types.CallbackQuery, state: FSMContext):
-            """Обработка callback кнопок"""
-            user_id = cb.sender.id
-            payload = cb.payload
-
-            try:
-                if payload == "record":
-                    if user_id not in self.user_data:
-                        self.user_data[user_id] = {
-                            'consent_pd': False,
-                            'consent_policy': False,
-                            'in_consent_step': True
-                        }
-                    else:
-                        self.user_data[user_id]['in_consent_step'] = True
-
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="✅ Согласен на обработку ПД", callback_data="consent_pd")],
-                        [InlineKeyboardButton(text="✅ Ознакомлен с политикой", callback_data="consent_policy")],
-                        [InlineKeyboardButton(text="❌ Отказать", callback_data="refuse_consent")]
-                    ])
-
-                    await self.bot.send_message(
-                        chat_id=user_id,
-                        text=f"Перед подачей заявки ознакомьтесь с документами и подтвердите:\n\n"
-                             f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
-                             f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
-                             f"Нажмите обе кнопки ниже для подтверждения:",
-                        reply_markup=keyboard,
-                        format="markdown"
-                    )
-                    logger.info(f"User {user_id} started application process")
-
-                elif payload == "consent_pd":
-                    if user_id in self.user_data and self.user_data[user_id].get('in_consent_step'):
-                        self.user_data[user_id]['consent_pd'] = True
-                        logger.info(f"User {user_id} consented to data processing")
-                        await self.check_consents(user_id)
-
-                elif payload == "consent_policy":
-                    if user_id in self.user_data and self.user_data[user_id].get('in_consent_step'):
-                        self.user_data[user_id]['consent_policy'] = True
-                        logger.info(f"User {user_id} consented to policy")
-                        await self.check_consents(user_id)
-
-                elif payload == "refuse_consent":
-                    await self.consent_refusal_handler(user_id, state)
-
-                elif payload.startswith("client_"):
-                    client_type = "Физическое лицо" if payload == "client_individual" else "Юридическое лицо"
-                    await self.client_type_handler(user_id, client_type, state)
-
-                elif payload.startswith("category_"):
-                    category_map = {
-                        "dtp": "ДТП",
-                        "family": "Семейное право",
-                        "real_estate": "Недвижимость",
-                        "labor": "Трудовые споры",
-                        "other_individual": "Другое",
-                        "business_reg": "Регистрация бизнеса",
-                        "contracts": "Договоры и споры",
-                        "labor_issues": "Трудовые вопросы",
-                        "taxes": "Налоги и штрафы",
-                        "other_business": "Другое"
+            # Запись на консультацию
+            elif text == "Записаться на консультацию" or text == "record":
+                if user_id not in self.user_data:
+                    self.user_data[user_id] = {
+                        'consent_pd': False,
+                        'consent_policy': False,
+                        'in_consent_step': True
                     }
-                    category = category_map.get(payload.replace("category_", ""), payload)
-                    self.user_data[user_id]['category'] = category
-                    await state.set_state(ApplicationForm.waiting_name)
-                    await self.bot.send_message(
-                        chat_id=user_id,
-                        text="Как вас зовут?"
-                    )
+                else:
+                    self.user_data[user_id]['in_consent_step'] = True
 
-                elif payload == "desc_write":
-                    await state.set_state(ApplicationForm.waiting_description)
-                    await self.bot.send_message(
-                        chat_id=user_id,
-                        text="Опишите вашу ситуацию:"
-                    )
+                keyboard = [
+                    [{"text": "✅ Согласен на обработку ПД", "type": "message"}],
+                    [{"text": "✅ Ознакомлен с политикой", "type": "message"}],
+                    [{"text": "❌ Отказать", "type": "message"}]
+                ]
 
-                elif payload == "desc_skip":
-                    await self.submit_application(user_id, description=None, state=state)
+                await self.send_message(
+                    user_id,
+                    f"Перед подачей заявки ознакомьтесь с документами и подтвердите:\n\n"
+                    f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
+                    f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
+                    f"Нажмите обе кнопки ниже для подтверждения:",
+                    keyboard
+                )
 
-                elif payload == "call_phone":
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="📝 Записаться на консультацию", callback_data="record")]
-                    ])
-                    await self.bot.send_message(
-                        chat_id=user_id,
-                        text="✅ Спасибо! Ждем вашего звонка.\n\n"
-                             "Наш специалист ответит на все ваши вопросы и поможет найти лучшее решение для вас.",
-                        reply_markup=keyboard
-                    )
+            # Согласие на обработку ПД
+            elif text == "Согласен на обработку ПД":
+                if user_id in self.user_data and self.user_data[user_id].get('in_consent_step'):
+                    self.user_data[user_id]['consent_pd'] = True
+                    await self.check_consents(user_id)
 
-                elif payload == "retry_consent":
-                    if user_id not in self.user_data:
-                        self.user_data[user_id] = {
-                            'consent_pd': False,
-                            'consent_policy': False,
-                            'in_consent_step': True
-                        }
+            # Согласие с политикой
+            elif text == "Ознакомлен с политикой":
+                if user_id in self.user_data and self.user_data[user_id].get('in_consent_step'):
+                    self.user_data[user_id]['consent_policy'] = True
+                    await self.check_consents(user_id)
+
+            # Отказать
+            elif text == "Отказать":
+                await self.send_refusal_application(user_id)
+                self.user_states[user_id] = None
+                self.user_data[user_id] = {}
+
+                keyboard = [
+                    [{"text": "☎️ Позвонить: 8-495-999-85-89", "type": "message"}],
+                    [{"text": "↩️ Дать согласие и оставить заявку", "type": "message"}]
+                ]
+
+                await self.send_message(
+                    user_id,
+                    "😔 Мы уважаем ваше решение и соблюдаем закон о защите персональных данных.\n\n"
+                    "Без согласия на обработку ПД мы не можем продолжить стандартный процесс консультации.\n\n"
+                    "Но это не означает, что мы не можем вам помочь! 💪\n\n"
+                    "Выберите один из вариантов:\n"
+                    "• Позвоните нам по номеру 8-495-999-85-89 и получите бесплатную консультацию\n"
+                    "• Или дайте согласие и оставьте заявку через бота",
+                    keyboard
+                )
+
+            # Тип клиента
+            elif self.user_states.get(user_id) == "waiting_client_type":
+                if text in ["Физическое лицо", "Юридическое лицо"]:
+                    self.user_data[user_id]['client_type'] = text
+                    self.user_states[user_id] = "waiting_category"
+
+                    if "Физическое" in text:
+                        keyboard = [
+                            [{"text": "🚗 ДТП", "type": "message"}],
+                            [{"text": "👨‍👩‍👧 Семейное право", "type": "message"}],
+                            [{"text": "🏠 Недвижимость", "type": "message"}],
+                            [{"text": "💼 Трудовые споры", "type": "message"}],
+                            [{"text": "❓ Другое", "type": "message"}]
+                        ]
                     else:
-                        self.user_data[user_id]['consent_pd'] = False
-                        self.user_data[user_id]['consent_policy'] = False
-                        self.user_data[user_id]['in_consent_step'] = True
+                        keyboard = [
+                            [{"text": "📋 Регистрация бизнеса", "type": "message"}],
+                            [{"text": "📝 Договоры и споры", "type": "message"}],
+                            [{"text": "👷 Трудовые вопросы", "type": "message"}],
+                            [{"text": "💰 Налоги и штрафы", "type": "message"}],
+                            [{"text": "❓ Другое", "type": "message"}]
+                        ]
 
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="✅ Согласен на обработку ПД", callback_data="consent_pd")],
-                        [InlineKeyboardButton(text="✅ Ознакомлен с политикой", callback_data="consent_policy")],
-                        [InlineKeyboardButton(text="❌ Отказать", callback_data="refuse_consent")]
-                    ])
+                    await self.send_message(user_id, "Выберите категорию вопроса:", keyboard)
 
-                    await self.bot.send_message(
-                        chat_id=user_id,
-                        text=f"Перед подачей заявки ознакомьтесь с документами и подтвердите:\n\n"
-                             f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
-                             f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
-                             f"Нажмите обе кнопки ниже для подтверждения:",
-                        reply_markup=keyboard,
-                        format="markdown"
+            # Категория
+            elif self.user_states.get(user_id) == "waiting_category":
+                self.user_data[user_id]['category'] = text
+                self.user_states[user_id] = "waiting_name"
+                await self.send_message(user_id, "Как вас зовут?")
+
+            # Имя
+            elif self.user_states.get(user_id) == "waiting_name":
+                self.user_data[user_id]['name'] = text
+                self.user_states[user_id] = "waiting_phone"
+                await self.send_message(user_id, "Ваш номер телефона?")
+
+            # Телефон
+            elif self.user_states.get(user_id) == "waiting_phone":
+                if not self.validate_phone(text):
+                    await self.send_message(
+                        user_id,
+                        "❌ Пожалуйста, введите корректный номер телефона.\nПримеры: +7 999 123-45-67 или 79991234567"
                     )
+                    return
 
-            except Exception as e:
-                logger.error(f"❌ Ошибка callback: {e}", exc_info=True)
-                await self.bot.send_message(user_id, "❌ Ошибка. Повторите попытку.")
+                self.user_data[user_id]['phone'] = text
+                self.user_states[user_id] = "waiting_description_choice"
 
-        @self.dp.message()
-        async def handle_message(message: Message, state: FSMContext):
-            """Обработка текстовых сообщений"""
-            user_id = message.sender.id
-            text = (message.text or "").strip()
+                keyboard = [[
+                    {"text": "✏️ Написать", "type": "message"},
+                    {"text": "➡️ Пропустить", "type": "message"}
+                ]]
 
-            if not user_id or not text:
-                return
+                await self.send_message(
+                    user_id,
+                    "Кратко опишите ситуацию (необязательно):",
+                    keyboard
+                )
 
-            logger.info(f"User {user_id}: {text[:50]}")
+            # Описание - выбор
+            elif self.user_states.get(user_id) == "waiting_description_choice":
+                if text == "Написать":
+                    self.user_states[user_id] = "waiting_description"
+                    await self.send_message(user_id, "Опишите вашу ситуацию:")
+                elif text == "Пропустить":
+                    await self.submit_application(user_id, description=None)
 
-            try:
-                current_state = await state.get_state()
+            # Описание
+            elif self.user_states.get(user_id) == "waiting_description":
+                await self.submit_application(user_id, description=text)
 
-                if current_state == ApplicationForm.waiting_client_type:
-                    if text in ["Физическое лицо", "Юридическое лицо"]:
-                        await self.client_type_handler(user_id, text, state)
+            # Позвонить
+            elif text == "Позвонить: 8-495-999-85-89":
+                keyboard = [[{"text": "📝 Записаться на консультацию", "type": "message"}]]
+                await self.send_message(
+                    user_id,
+                    "✅ Спасибо! Ждем вашего звонка.\n\n"
+                    "Наш специалист ответит на все ваши вопросы и поможет найти лучшее решение для вас.",
+                    keyboard
+                )
 
-                elif current_state == ApplicationForm.waiting_category:
-                    self.user_data[user_id]['category'] = text
-                    await state.set_state(ApplicationForm.waiting_name)
-                    await self.bot.send_message(chat_id=user_id, text="Как вас зовут?")
+            # Дать согласие
+            elif text == "Дать согласие и оставить заявку":
+                self.user_data[user_id] = {
+                    'consent_pd': False,
+                    'consent_policy': False,
+                    'in_consent_step': True
+                }
 
-                elif current_state == ApplicationForm.waiting_name:
-                    self.user_data[user_id]['name'] = text
-                    await state.set_state(ApplicationForm.waiting_phone)
-                    await self.bot.send_message(chat_id=user_id, text="Ваш номер телефона?")
+                keyboard = [
+                    [{"text": "✅ Согласен на обработку ПД", "type": "message"}],
+                    [{"text": "✅ Ознакомлен с политикой", "type": "message"}],
+                    [{"text": "❌ Отказать", "type": "message"}]
+                ]
 
-                elif current_state == ApplicationForm.waiting_phone:
-                    if not self.validate_phone(text):
-                        await self.bot.send_message(
-                            chat_id=user_id,
-                            text="❌ Пожалуйста, введите корректный номер телефона.\nПримеры: +7 999 123-45-67 или 79991234567"
-                        )
-                        return
+                await self.send_message(
+                    user_id,
+                    f"Перед подачей заявки ознакомьтесь с документами и подтвердите:\n\n"
+                    f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
+                    f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
+                    f"Нажмите обе кнопки ниже для подтверждения:",
+                    keyboard
+                )
 
-                    self.user_data[user_id]['phone'] = text
-                    await state.set_state(ApplicationForm.waiting_description_choice)
-
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                        [InlineKeyboardButton(text="✏️ Написать", callback_data="desc_write"),
-                         InlineKeyboardButton(text="➡️ Пропустить", callback_data="desc_skip")]
-                    ])
-
-                    await self.bot.send_message(
-                        chat_id=user_id,
-                        text="Кратко опишите ситуацию (необязательно):",
-                        reply_markup=keyboard
-                    )
-
-                elif current_state == ApplicationForm.waiting_description:
-                    await self.submit_application(user_id, description=text, state=state)
-
-            except Exception as e:
-                logger.error(f"❌ Ошибка обработки сообщения: {e}", exc_info=True)
-                await self.bot.send_message(user_id, "❌ Ошибка. Повторите попытку.")
-
-    def validate_phone(self, phone: str) -> bool:
-        """Проверить корректность номера телефона"""
-        cleaned = re.sub(r'[\s\-\(\)]', '', phone)
-        if re.match(r'^\+?7\d{9,10}$', cleaned) or re.match(r'^\+?\d{10,15}$', cleaned):
-            return True
-        return False
+        except Exception as e:
+            logger.error(f"❌ Ошибка обработки сообщения: {e}", exc_info=True)
 
     async def check_consents(self, user_id: str):
         """Проверить оба согласия"""
         if self.user_data[user_id]['consent_pd'] and self.user_data[user_id]['consent_policy']:
             self.user_data[user_id]['in_consent_step'] = False
-            logger.info(f"User {user_id} passed consent step")
+            self.user_states[user_id] = "waiting_client_type"
 
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="👤 Физическое лицо", callback_data="client_individual")],
-                [InlineKeyboardButton(text="🏢 Юридическое лицо", callback_data="client_business")]
-            ])
+            keyboard = [[
+                {"text": "👤 Физическое лицо", "type": "message"},
+                {"text": "🏢 Юридическое лицо", "type": "message"}
+            ]]
 
-            await self.bot.send_message(
-                chat_id=user_id,
-                text="✅ Спасибо! Теперь выберите тип клиента:",
-                reply_markup=keyboard
+            await self.send_message(
+                user_id,
+                "✅ Спасибо! Теперь выберите тип клиента:",
+                keyboard
             )
-
-    async def client_type_handler(self, user_id: str, text: str, state: FSMContext):
-        """Выбор типа клиента"""
-        self.user_data[user_id]['client_type'] = text
-        await state.set_state(ApplicationForm.waiting_category)
-
-        if "Физическое" in text:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🚗 ДТП", callback_data="category_dtp")],
-                [InlineKeyboardButton(text="👨‍👩‍👧 Семейное право", callback_data="category_family")],
-                [InlineKeyboardButton(text="🏠 Недвижимость", callback_data="category_real_estate")],
-                [InlineKeyboardButton(text="💼 Трудовые споры", callback_data="category_labor")],
-                [InlineKeyboardButton(text="❓ Другое", callback_data="category_other_individual")]
-            ])
-        else:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="📋 Регистрация бизнеса", callback_data="category_business_reg")],
-                [InlineKeyboardButton(text="📝 Договоры и споры", callback_data="category_contracts")],
-                [InlineKeyboardButton(text="👷 Трудовые вопросы", callback_data="category_labor_issues")],
-                [InlineKeyboardButton(text="💰 Налоги и штрафы", callback_data="category_taxes")],
-                [InlineKeyboardButton(text="❓ Другое", callback_data="category_other_business")]
-            ])
-
-        await self.bot.send_message(
-            chat_id=user_id,
-            text="Выберите категорию вопроса:",
-            reply_markup=keyboard
-        )
-
-    async def consent_refusal_handler(self, user_id: str, state: FSMContext):
-        """Обработка отказа от согласия"""
-        await self.send_refusal_application(user_id)
-        await state.clear()
-        self.user_data[user_id] = {}
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="☎️ Позвонить: 8-495-999-85-89", callback_data="call_phone")],
-            [InlineKeyboardButton(text="↩️ Дать согласие и оставить заявку", callback_data="retry_consent")]
-        ])
-
-        await self.bot.send_message(
-            chat_id=user_id,
-            text="😔 Мы уважаем ваше решение и соблюдаем закон о защите персональных данных.\n\n"
-                 "Без согласия на обработку ПД мы не можем продолжить стандартный процесс консультации.\n\n"
-                 "Но это не означает, что мы не можем вам помочь! 💪\n\n"
-                 "Выберите один из вариантов:\n"
-                 "• Позвоните нам по номеру 8-495-999-85-89 и получите бесплатную консультацию\n"
-                 "• Или дайте согласие и оставьте заявку через бота",
-            reply_markup=keyboard,
-            format="markdown"
-        )
 
     async def send_refusal_application(self, user_id: str):
         """Отправить заявку об отказе админу"""
@@ -330,21 +286,18 @@ class MaxSecretaryBot:
             message_text = (
                 f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
                 f"{'━' * 30}\n"
-                f"Пользователь отказал в согласии на обработку персональных данных.\n"
-                f"Мы соблюдаем законодательство и не собираем данные без согласия.\n"
-                f"\n👤 ID пользователя: {user_id}\n"
-                f"\n⚠️ ДЕЙСТВИЕ: Позволить пользователю позвонить самостоятельно\n"
-                f"на номер 8-495-999-85-89 для консультации.\n"
-                f"\n📲 Источник: Max\n"
+                f"Пользователь отказал в согласии.\n"
+                f"👤 ID: {user_id}\n"
+                f"📲 Источник: Max\n"
                 f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
                 f"{'━' * 30}"
             )
-            await self.bot.send_message(MAX_ADMIN_USER_ID, message_text)
-            logger.info(f"✓ Заявка об отказе отправлена в чат")
+            await self.send_message(self.admin_id, message_text)
+            logger.info(f"✓ Заявка об отказе отправлена")
         except Exception as e:
             logger.error(f"✗ Ошибка отправки заявки об отказе: {e}")
 
-    async def submit_application(self, user_id: str, description=None, state: FSMContext = None):
+    async def submit_application(self, user_id: str, description=None):
         """Отправить заявку"""
         data = self.user_data[user_id]
         name = data['name']
@@ -362,56 +315,79 @@ class MaxSecretaryBot:
         )
 
         # Отправить благодарность
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Записаться на консультацию", callback_data="record")]
-        ])
+        keyboard = [[{"text": "📝 Записаться на консультацию", "type": "message"}]]
 
-        await self.bot.send_message(
-            chat_id=user_id,
-            text=f"✅ Спасибо, {name}! Заявка принята.\n"
-                 f"Наш специалист свяжется с вами в ближайшее время.",
-            reply_markup=keyboard
+        await self.send_message(
+            user_id,
+            f"✅ Спасибо, {name}! Заявка принята.\n"
+            f"Наш специалист свяжется с вами в ближайшее время.",
+            keyboard
         )
 
         # Отправить в рабочий чат
-        await self.send_to_work_chat(data, description)
+        message_text = (
+            f"🔔 НОВАЯ ЗАЯВКА\n"
+            f"{'━' * 30}\n"
+            f"👤 Имя: {data['name']}\n"
+            f"📱 Телефон: {data['phone']}\n"
+            f"🏷️ Тип: {data['client_type']}\n"
+            f"📂 Категория: {data['category']}\n"
+        )
+        if description:
+            message_text += f"💬 Суть: {description}\n"
 
-        # Очистить состояние и данные
-        if state:
-            await state.clear()
+        message_text += (
+            f"\n✅ Согласия:\n"
+            f"  • Обработка ПД: {'✅ Да' if data['consent_pd'] else '❌ Нет'}\n"
+            f"  • Политика обработки: {'✅ Да' if data['consent_policy'] else '❌ Нет'}\n"
+            f"\n📲 Источник: Max\n"
+            f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+            f"{'━' * 30}"
+        )
+
+        await self.send_message(self.admin_id, message_text)
+
+        # Очистить состояние
+        self.user_states[user_id] = None
         if user_id in self.user_data:
             del self.user_data[user_id]
 
-    async def send_to_work_chat(self, data: dict, description: str = None):
-        """Отправить заявку в рабочий чат"""
-        try:
-            message_text = (
-                f"🔔 НОВАЯ ЗАЯВКА\n"
-                f"{'━' * 30}\n"
-                f"👤 Имя: {data['name']}\n"
-                f"📱 Телефон: {data['phone']}\n"
-                f"🏷️ Тип: {data['client_type']}\n"
-                f"📂 Категория: {data['category']}\n"
-            )
-            if description:
-                message_text += f"💬 Суть: {description}\n"
-
-            message_text += (
-                f"\n✅ Согласия:\n"
-                f"  • Обработка ПД: {'✅ Да' if data['consent_pd'] else '❌ Нет'}\n"
-                f"  • Политика обработки: {'✅ Да' if data['consent_policy'] else '❌ Нет'}\n"
-                f"\n📲 Источник: Max\n"
-                f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-                f"{'━' * 30}"
-            )
-            await self.bot.send_message(MAX_ADMIN_USER_ID, message_text)
-            logger.info(f"✓ Заявка отправлена в чат")
-        except Exception as e:
-            logger.error(f"✗ Ошибка отправки в чат: {e}")
-
-    async def start(self):
-        """Запустить бота"""
-        logger.info("Max бот-секретарь запущен и слушает команды")
-        await self.dp.start_polling()
-
 max_bot = MaxSecretaryBot()
+
+async def webhook_handler(request):
+    """Обработать входящее сообщение через webhook"""
+    try:
+        data = await request.json()
+        logger.info(f"📨 Webhook received: {data}")
+
+        if data.get('type') == 'message':
+            await max_bot.handle_message(data['data'])
+
+        return web.json_response({'status': 'ok'})
+    except Exception as e:
+        logger.error(f"❌ Webhook error: {e}", exc_info=True)
+        return web.json_response({'status': 'error'}, status=400)
+
+async def start_webhook():
+    """Запустить webhook сервер"""
+    app = web.Application()
+    app.router.add_post('/webhook', webhook_handler)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+
+    logger.info("✓ Webhook сервер запущен на порту 8080")
+    return runner
+
+async def startup():
+    """Инициализация и запуск"""
+    try:
+        runner = await start_webhook()
+        while True:
+            await asyncio.sleep(3600)
+    except Exception as e:
+        logger.error(f"❌ Ошибка при запуске: {e}", exc_info=True)
+        raise

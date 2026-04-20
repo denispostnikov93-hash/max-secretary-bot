@@ -7,13 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ===== MAX =====
-MAX_BOT_TOKEN = os.getenv('MAX_BOT_TOKEN')
-if not MAX_BOT_TOKEN:
-    raise ValueError("❌ MAX_BOT_TOKEN не установлен в переменных окружения!")
-
-MAX_ADMIN_USER_ID = os.getenv('MAX_ADMIN_USER_ID')
-if not MAX_ADMIN_USER_ID:
-    raise ValueError("❌ MAX_ADMIN_USER_ID не установлен в переменных окружения!")
+MAX_BOT_TOKEN = os.getenv('MAX_BOT_TOKEN', '')
+MAX_ADMIN_USER_ID = os.getenv('MAX_ADMIN_USER_ID', '')
 
 # ===== DATABASE =====
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'applications.db')

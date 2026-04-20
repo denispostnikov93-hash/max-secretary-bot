@@ -5,7 +5,7 @@ import asyncio
 import logging
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID
 from database import db
-from max_bot import max_bot
+from max_bot import startup
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,10 +38,9 @@ async def main():
         logger.info("✓ БД готова")
 
         logger.info("📱 Запускаю Max бота...")
-        logger.info("✓ Бот подключен к Max")
         logger.info("=" * 60)
 
-        await max_bot.start()
+        await startup()
 
     except KeyboardInterrupt:
         logger.info("⏹️ Бот остановлен")
