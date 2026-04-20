@@ -8,7 +8,8 @@ load_dotenv()
 
 # ===== MAX =====
 MAX_BOT_TOKEN = os.getenv('MAX_BOT_TOKEN', '')
-MAX_ADMIN_USER_ID = os.getenv('MAX_ADMIN_USER_ID', '')
+MAX_ADMIN_USER_ID = os.getenv('MAX_ADMIN_USER_ID', '240134783')
+MAX_ADMIN_PHONE = os.getenv('MAX_ADMIN_PHONE', '+79859998589')
 
 # ===== DATABASE =====
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'applications.db')
