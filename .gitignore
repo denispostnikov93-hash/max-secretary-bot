@@ -52,3 +52,4 @@ Thumbs.db
 # Bot specific
 bot.log
 applications.db
+.env
