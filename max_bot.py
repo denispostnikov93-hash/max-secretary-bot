@@ -227,14 +227,21 @@ async def register_startup_handlers():
             async def on_bot_started(event):
                 logger.info(f"   bot_started event type: {type(event)}")
                 logger.info(f"   bot_started event attrs: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+                logger.info(f"   bot_started event repr: {repr(event)}")
                 # Пробуем разные варианты получения user_id
                 user_id = None
                 if hasattr(event, 'user_id'):
                     user_id = str(event.user_id)
+                    logger.info(f"   ✓ Нашли user_id через event.user_id")
                 elif hasattr(event, 'user') and hasattr(event.user, 'user_id'):
                     user_id = str(event.user.user_id)
+                    logger.info(f"   ✓ Нашли user_id через event.user.user_id")
+                elif hasattr(event, 'sender') and hasattr(event.sender, 'user_id'):
+                    user_id = str(event.sender.user_id)
+                    logger.info(f"   ✓ Нашли user_id через event.sender.user_id")
                 elif hasattr(event, 'sender_id'):
                     user_id = str(event.sender_id)
+                    logger.info(f"   ✓ Нашли user_id через event.sender_id")
 
                 if user_id:
                     logger.info(f"✅ bot_started перехвачен: {user_id}")
@@ -251,14 +258,21 @@ async def register_startup_handlers():
             async def on_dialog_cleared(event):
                 logger.info(f"   dialog_cleared event type: {type(event)}")
                 logger.info(f"   dialog_cleared event attrs: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+                logger.info(f"   dialog_cleared event repr: {repr(event)}")
                 # Пробуем разные варианты получения user_id
                 user_id = None
                 if hasattr(event, 'user_id'):
                     user_id = str(event.user_id)
+                    logger.info(f"   ✓ Нашли user_id через event.user_id")
                 elif hasattr(event, 'user') and hasattr(event.user, 'user_id'):
                     user_id = str(event.user.user_id)
+                    logger.info(f"   ✓ Нашли user_id через event.user.user_id")
+                elif hasattr(event, 'sender') and hasattr(event.sender, 'user_id'):
+                    user_id = str(event.sender.user_id)
+                    logger.info(f"   ✓ Нашли user_id через event.sender.user_id")
                 elif hasattr(event, 'sender_id'):
                     user_id = str(event.sender_id)
+                    logger.info(f"   ✓ Нашли user_id через event.sender_id")
 
                 if user_id:
                     logger.info(f"✅ dialog_cleared перехвачен: {user_id}")
