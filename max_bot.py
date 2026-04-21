@@ -15,7 +15,7 @@ from database import db
 logger = logging.getLogger(__name__)
 
 # Version marker - helps debug Railway caching
-logger.info("🔧 BOT VERSION: v7.1 - Using message.answer() method")
+logger.info("🔧 BOT VERSION: v8.0 - Using @dp.bot_started() and @dp.dialog_cleared() decorators")
 
 if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
     raise ValueError("MAX_BOT_TOKEN environment variable is not set or empty")
