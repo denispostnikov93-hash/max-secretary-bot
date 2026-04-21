@@ -173,6 +173,18 @@ async def handle_start(message: MessageCreated):
     await send_start_message(user_id)
 
 
+# Обработчик для события bot_started (нажата кнопка "начать")
+try:
+    @dp.bot_started()
+    async def handle_bot_started(update):
+        """Обработчик события bot_started"""
+        user_id = str(update.user_id)
+        logger.info(f"🟢 bot_started от {user_id}")
+        await send_start_message(user_id)
+except Exception as e:
+    logger.warning(f"⚠️ Не удалось зарегистрировать bot_started обработчик: {e}")
+
+
 @dp.message_created(Command('my_id'))
 async def handle_my_id(message: MessageCreated):
     user_id = message.message.sender.user_id
