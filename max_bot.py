@@ -215,28 +215,44 @@ async def handle_startup_event(user_id: str):
 # Обработчик bot_started через декоратор
 @dp.bot_started()
 async def handle_bot_started(event):
-    logger.info(f"🔵 bot_started событие получено!")
-    logger.info(f"   Тип: {type(event)}")
-    logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+    logger.info(f"🔵 bot_started событие получено! Тип: {type(event).__name__}")
 
     user_id = None
-    # Пробуем разные варианты получения user_id
-    for method_name, getter in [
-        ("event.user_id", lambda e: e.user_id),
-        ("event.user.user_id", lambda e: e.user.user_id),
-        ("event.sender.user_id", lambda e: e.sender.user_id),
-        ("event.sender_id", lambda e: e.sender_id),
-    ]:
+
+    # Метод 1: event.user_id
+    if not user_id:
         try:
-            user_id = str(getter(event))
-            logger.info(f"   ✓ Успешно через {method_name}: {user_id}")
-            break
-        except (AttributeError, TypeError):
-            logger.info(f"   ✗ {method_name} не существует")
+            user_id = str(event.user_id)
+            logger.info(f"   ✓ Метод 1: event.user_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 1 failed: {type(e).__name__}")
+
+    # Метод 2: event.user.user_id
+    if not user_id:
+        try:
+            user_id = str(event.user.user_id)
+            logger.info(f"   ✓ Метод 2: event.user.user_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 2 failed: {type(e).__name__}")
+
+    # Метод 3: event.sender.user_id
+    if not user_id:
+        try:
+            user_id = str(event.sender.user_id)
+            logger.info(f"   ✓ Метод 3: event.sender.user_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 3 failed: {type(e).__name__}")
+
+    # Метод 4: event.sender_id
+    if not user_id:
+        try:
+            user_id = str(event.sender_id)
+            logger.info(f"   ✓ Метод 4: event.sender_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 4 failed: {type(e).__name__}")
 
     if not user_id:
         logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
-        logger.info(f"   Полный объект: {repr(event)}")
         return
 
     logger.info(f"✅ bot_started перехвачен от {user_id}")
@@ -246,28 +262,44 @@ async def handle_bot_started(event):
 # Обработчик dialog_cleared через декоратор
 @dp.dialog_cleared()
 async def handle_dialog_cleared(event):
-    logger.info(f"🟠 dialog_cleared событие получено!")
-    logger.info(f"   Тип: {type(event)}")
-    logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+    logger.info(f"🟠 dialog_cleared событие получено! Тип: {type(event).__name__}")
 
     user_id = None
-    # Пробуем разные варианты получения user_id
-    for method_name, getter in [
-        ("event.user_id", lambda e: e.user_id),
-        ("event.user.user_id", lambda e: e.user.user_id),
-        ("event.sender.user_id", lambda e: e.sender.user_id),
-        ("event.sender_id", lambda e: e.sender_id),
-    ]:
+
+    # Метод 1: event.user_id
+    if not user_id:
         try:
-            user_id = str(getter(event))
-            logger.info(f"   ✓ Успешно через {method_name}: {user_id}")
-            break
-        except (AttributeError, TypeError):
-            logger.info(f"   ✗ {method_name} не существует")
+            user_id = str(event.user_id)
+            logger.info(f"   ✓ Метод 1: event.user_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 1 failed: {type(e).__name__}")
+
+    # Метод 2: event.user.user_id
+    if not user_id:
+        try:
+            user_id = str(event.user.user_id)
+            logger.info(f"   ✓ Метод 2: event.user.user_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 2 failed: {type(e).__name__}")
+
+    # Метод 3: event.sender.user_id
+    if not user_id:
+        try:
+            user_id = str(event.sender.user_id)
+            logger.info(f"   ✓ Метод 3: event.sender.user_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 3 failed: {type(e).__name__}")
+
+    # Метод 4: event.sender_id
+    if not user_id:
+        try:
+            user_id = str(event.sender_id)
+            logger.info(f"   ✓ Метод 4: event.sender_id = {user_id}")
+        except (AttributeError, TypeError) as e:
+            logger.info(f"   ✗ Метод 4 failed: {type(e).__name__}")
 
     if not user_id:
         logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
-        logger.info(f"   Полный объект: {repr(event)}")
         return
 
     logger.info(f"✅ dialog_cleared перехвачен от {user_id}")
