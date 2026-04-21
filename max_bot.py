@@ -348,13 +348,20 @@ async def handle_message(message: MessageCreated):
     state = user_states.get(user_id)
     logger.info(f"📨 {user_id} (state={state}): {text[:50]}")
 
+    # Первый контакт - показываем приветствие
     if user_id not in user_data:
+        logger.info(f"🟢 Первый контакт от {user_id} - инициализирую данные")
         user_data[user_id] = {
             'consent_pd': False, 'consent_policy': False,
             'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
         }
-        # Первый контакт - показываем приветствие
-        logger.info(f"🟢 Первый контакт от {user_id}")
+        user_states[user_id] = "menu"
+        await send_start_message(user_id)
+        return
+
+    # Если пользователь в главном меню - показываем приветствие снова
+    if state == "menu" or state is None:
+        logger.info(f"ℹ️ {user_id} в меню или без состояния - показываю приветствие")
         await send_start_message(user_id)
         return
 
