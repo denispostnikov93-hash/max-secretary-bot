@@ -189,6 +189,58 @@ async def handle_my_id(message: MessageCreated):
     logger.info(f"📨 /my_id от {user_id}")
 
 
+@dp.bot_started()
+async def handle_bot_started(update):
+    """Обработчик для события bot_started (нажата кнопка 'Начать')"""
+    try:
+        user_id = str(update.bot_started.user_id)
+        logger.info(f"🟢 bot_started от {user_id}")
+        # Отправляем приветствие напрямую, без объекта message
+        text = "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права."
+        await bot.send_message(
+            chat_id=user_id,
+            text=text,
+            attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
+        )
+        # Инициализируем данные пользователя
+        user_data[user_id] = {
+            'consent_pd': False, 'consent_policy': False,
+            'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
+        }
+        user_states[user_id] = "menu"
+        logger.info(f"✓ Приветствие отправлено при bot_started от {user_id}")
+    except Exception as e:
+        logger.error(f"❌ ОШИБКА в handle_bot_started: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+@dp.dialog_cleared()
+async def handle_dialog_cleared(update):
+    """Обработчик для события dialog_cleared (чат очищен/переоткрыт)"""
+    try:
+        user_id = str(update.dialog_cleared.user_id)
+        logger.info(f"🟢 dialog_cleared от {user_id}")
+        # Отправляем приветствие напрямую, без объекта message
+        text = "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права."
+        await bot.send_message(
+            chat_id=user_id,
+            text=text,
+            attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
+        )
+        # Инициализируем данные пользователя
+        user_data[user_id] = {
+            'consent_pd': False, 'consent_policy': False,
+            'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
+        }
+        user_states[user_id] = "menu"
+        logger.info(f"✓ Приветствие отправлено при dialog_cleared от {user_id}")
+    except Exception as e:
+        logger.error(f"❌ ОШИБКА в handle_dialog_cleared: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
 @dp.message_callback()
 async def handle_callback(callback: MessageCallback):
     user_id = str(callback.callback.user.user_id)
