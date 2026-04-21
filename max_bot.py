@@ -80,11 +80,15 @@ def parse_category_and_description(text: str, client_type: str) -> tuple:
 async def send_admin_message(text: str):
     """Отправить сообщение админу"""
     try:
-        await bot.send_message(chat_id=str(admin_id), text=text)
-        logger.info(f"✓ Сообщение админу отправлено")
+        logger.info(f"📤 Попытка отправить сообщение админу (ID: {admin_id})")
+        logger.info(f"📝 Текст: {text[:100]}...")
+        result = await bot.send_message(chat_id=str(admin_id), text=text)
+        logger.info(f"✓ Сообщение админу отправлено успешно: {result}")
         return True
     except Exception as e:
-        logger.error(f"✗ Ошибка отправки админу: {e}")
+        logger.error(f"✗ ОШИБКА отправки админу: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return False
 
 
@@ -287,6 +291,7 @@ async def handle_message(message: MessageCreated):
 async def send_refusal_notification(user_id: str):
     """Отправить админу уведомление об отказе пользователя"""
     try:
+        logger.info(f"📋 Создание уведомления об отказе для {user_id}")
         phone = user_data.get(user_id, {}).get('phone', 'Не указан')
         message = (
             f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
@@ -298,9 +303,12 @@ async def send_refusal_notification(user_id: str):
             f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
             f"{'━' * 40}"
         )
+        logger.info(f"📤 Отправляю уведомление об отказе")
         await send_admin_message(message)
     except Exception as e:
-        logger.error(f"✗ Ошибка отправки уведомления об отказе: {e}")
+        logger.error(f"✗ ОШИБКА отправки уведомления об отказе: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 async def submit_application(user_id: str, message: MessageCreated):
