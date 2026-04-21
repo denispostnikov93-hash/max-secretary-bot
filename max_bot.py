@@ -20,18 +20,7 @@ if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
 bot = Bot(token=MAX_BOT_TOKEN)
 dp = Dispatcher()
 
-# Пытаемся зарегистрировать обработчики для startup событий
-try:
-    dp.bot_started.register(handle_startup_events)
-    logger.info("✓ Зарегистрирован обработчик bot_started")
-except Exception as e:
-    logger.warning(f"⚠️ Не удалось зарегистрировать bot_started: {e}")
-
-try:
-    dp.dialog_cleared.register(handle_startup_events)
-    logger.info("✓ Зарегистрирован обработчик dialog_cleared")
-except Exception as e:
-    logger.warning(f"⚠️ Не удалось зарегистрировать dialog_cleared: {e}")
+# Регистрация startup событий будет в конце файла, после определения всех функций
 
 admin_id = int(MAX_ADMIN_USER_ID) if isinstance(MAX_ADMIN_USER_ID, str) else MAX_ADMIN_USER_ID
 
@@ -215,7 +204,6 @@ async def handle_my_id(message: MessageCreated):
     logger.info(f"📨 /my_id от {user_id}")
 
 
-@dp.message_created()
 @dp.message_callback()
 async def handle_callback(callback: MessageCallback):
     user_id = str(callback.callback.user.user_id)
@@ -486,6 +474,21 @@ async def submit_application(user_id: str, message: MessageCreated):
     user_states[user_id] = None
     if user_id in user_data:
         del user_data[user_id]
+
+
+# ===== РЕГИСТРАЦИЯ STARTUP СОБЫТИЙ (после определения всех функций) =====
+
+try:
+    dp.bot_started.register(handle_startup_events)
+    logger.info("✓ Зарегистрирован обработчик bot_started")
+except Exception as e:
+    logger.warning(f"⚠️ Не удалось зарегистрировать bot_started: {e}")
+
+try:
+    dp.dialog_cleared.register(handle_startup_events)
+    logger.info("✓ Зарегистрирован обработчик dialog_cleared")
+except Exception as e:
+    logger.warning(f"⚠️ Не удалось зарегистрировать dialog_cleared: {e}")
 
 
 async def start_polling():
