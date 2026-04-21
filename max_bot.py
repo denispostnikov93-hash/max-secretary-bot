@@ -165,6 +165,8 @@ async def handle_callback(callback: MessageCallback):
     user_id = str(callback.callback.user.user_id)
     payload = callback.callback.payload
     logger.info(f"📘 Callback от {user_id}: {payload}")
+    logger.info(f"🔍 callback.callback.user attributes: {vars(callback.callback.user) if hasattr(callback.callback.user, '__dict__') else 'no dict'}")
+    logger.info(f"🔍 callback.callback.user dir: {[attr for attr in dir(callback.callback.user) if not attr.startswith('_')]}")
 
     if user_id not in user_data:
         user_data[user_id] = {
@@ -291,6 +293,7 @@ async def handle_message(message: MessageCreated):
     text = text.strip()
     state = user_states.get(user_id)
     logger.info(f"📨 {user_id} (state={state}): {text[:50]}")
+    logger.info(f"🔍 message.message.sender attributes: {vars(message.message.sender) if hasattr(message.message.sender, '__dict__') else 'no dict'}")
 
     if user_id not in user_data:
         user_data[user_id] = {
