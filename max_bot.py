@@ -36,38 +36,32 @@ def make_keyboard(*buttons):
     return [kb.as_markup()]
 
 
-async def get_user_phone(user_id: str) -> str:
-    """Получить номер телефона пользователя из профиля Max"""
+async def get_user_profile_phone(user_id: str) -> str:
+    """Попыт получить номер телефона из профиля Max через API"""
     try:
-        logger.info(f"🔍 Пытаюсь получить информацию о пользователе {user_id}")
+        # Пытаемся через разные методы получить информацию
+        # Проверяем наличие метода get_me (получить информацию о боте или пользователе)
+        if hasattr(bot, 'get_me'):
+            result = await bot.get_me()
+            logger.info(f"🔍 get_me result: {result}")
 
-        # Пытаемся получить информацию о пользователе через API
+        # Проверяем get_user если он существует
         if hasattr(bot, 'get_user'):
-            user_info = await bot.get_user(user_id=int(user_id))
-            logger.info(f"🔍 user_info: {user_info}")
-            logger.info(f"🔍 user_info type: {type(user_info)}")
-            logger.info(f"🔍 user_info dict: {vars(user_info) if hasattr(user_info, '__dict__') else 'no dict'}")
+            try:
+                user_info = await bot.get_user(user_id=int(user_id))
+                logger.info(f"🔍 get_user result: {vars(user_info) if hasattr(user_info, '__dict__') else user_info}")
 
-            # Проверяем разные варианты где может быть номер
-            if hasattr(user_info, 'phone') and user_info.phone:
-                logger.info(f"✓ Получен телефон из профиля (phone): {user_info.phone}")
-                return user_info.phone
-            elif hasattr(user_info, 'contacts') and user_info.contacts:
-                logger.info(f"✓ Получены контакты: {user_info.contacts}")
-                return str(user_info.contacts)
-            else:
-                logger.warning(f"⚠️ Телефон не найден в профиле")
-                logger.warning(f"⚠️ Атрибуты user_info: {[attr for attr in dir(user_info) if not attr.startswith('_')]}")
-                return "Не указан"
-        else:
-            logger.warning(f"⚠️ bot.get_user не существует")
-            return "Не указан"
+                if hasattr(user_info, 'phone') and user_info.phone:
+                    return user_info.phone
+            except Exception as e:
+                logger.warning(f"⚠️ get_user failed: {e}")
+
+        logger.warning(f"⚠️ Не удалось получить номер из профиля Max (API ограничение или метод недоступен)")
+        return ""
 
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось получить профиль: {type(e).__name__}: {e}")
-        import traceback
-        logger.warning(traceback.format_exc())
-        return "Не указан"
+        logger.warning(f"⚠️ Ошибка при попытке получить профиль: {type(e).__name__}: {e}")
+        return ""
 
 
 def validate_phone(phone: str) -> bool:
@@ -165,8 +159,6 @@ async def handle_callback(callback: MessageCallback):
     user_id = str(callback.callback.user.user_id)
     payload = callback.callback.payload
     logger.info(f"📘 Callback от {user_id}: {payload}")
-    logger.info(f"🔍 callback.callback.user attributes: {vars(callback.callback.user) if hasattr(callback.callback.user, '__dict__') else 'no dict'}")
-    logger.info(f"🔍 callback.callback.user dir: {[attr for attr in dir(callback.callback.user) if not attr.startswith('_')]}")
 
     if user_id not in user_data:
         user_data[user_id] = {
@@ -293,7 +285,6 @@ async def handle_message(message: MessageCreated):
     text = text.strip()
     state = user_states.get(user_id)
     logger.info(f"📨 {user_id} (state={state}): {text[:50]}")
-    logger.info(f"🔍 message.message.sender attributes: {vars(message.message.sender) if hasattr(message.message.sender, '__dict__') else 'no dict'}")
 
     if user_id not in user_data:
         user_data[user_id] = {
@@ -334,13 +325,17 @@ async def send_refusal_notification(user_id: str):
     """Отправить админу уведомление об отказе пользователя"""
     try:
         logger.info(f"📋 Создание уведомления об отказе для {user_id}")
-        phone_from_profile = await get_user_phone(user_id)
+        phone_from_profile = await get_user_profile_phone(user_id)
+
         message = (
             f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
             f"{'━' * 40}\n"
             f"Пользователь отказал в согласии на обработку ПД\n"
             f"👤 User ID: {user_id}\n"
-            f"📱 Телефон из профиля: {phone_from_profile}\n"
+        )
+        if phone_from_profile:
+            message += f"📱 Телефон (профиль): {phone_from_profile}\n"
+        message += (
             f"📲 Источник: Max\n"
             f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
             f"{'━' * 40}"
@@ -357,16 +352,18 @@ async def submit_application(user_id: str, message: MessageCreated):
     data = user_data[user_id]
     name = data.get('name', 'Неизвестно')
 
-    # Получаем телефон из профиля пользователя
-    phone_from_profile = await get_user_phone(user_id)
+    # Получаем телефон из профиля пользователя (если доступен)
+    phone_from_profile = await get_user_profile_phone(user_id)
+    # Используем введённый телефон как основной, профиль как доп информация
+    primary_phone = data.get('phone', 'Не указан')
 
     try:
         await db.save_application(
-            name=data['name'], phone=phone_from_profile, client_type=data['client_type'],
+            name=data['name'], phone=primary_phone, client_type=data['client_type'],
             category=data['category'], description=data['description'], source="Max",
             consent_pd=data['consent_pd'], consent_policy=data['consent_policy']
         )
-        logger.info(f"✓ Заявка {name} сохранена с телефоном из профиля: {phone_from_profile}")
+        logger.info(f"✓ Заявка {name} сохранена")
     except Exception as e:
         logger.error(f"✗ Ошибка сохранения заявки: {e}")
 
@@ -379,8 +376,11 @@ async def submit_application(user_id: str, message: MessageCreated):
             f"🔔 НОВАЯ ЗАЯВКА\n"
             f"{'━' * 30}\n"
             f"👤 Имя: {data['name']}\n"
-            f"☎️ Телефон (введён): {data['phone']}\n"
-            f"📱 Телефон из профиля: {phone_from_profile}\n"
+            f"☎️ Телефон (введён): {primary_phone}\n"
+        )
+        if phone_from_profile:
+            admin_message += f"📱 Телефон (профиль): {phone_from_profile}\n"
+        admin_message += (
             f"🏷️ Тип: {data['client_type']}\n"
             f"📂 Категория: {data['category']}\n"
         )
