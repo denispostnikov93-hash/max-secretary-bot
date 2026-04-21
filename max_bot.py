@@ -215,27 +215,39 @@ async def handle_startup_event(user_id: str):
 # Попытаемся вручную зарегистрировать обработчик для startup событий
 async def register_startup_handlers():
     """Регистрируем обработчики для bot_started и dialog_cleared"""
+    logger.info("📋 Начинаю регистрацию startup handlers...")
+    logger.info(f"   dp type: {type(dp)}")
+    logger.info(f"   dp attributes: {[attr for attr in dir(dp) if 'start' in attr.lower() or 'clear' in attr.lower()]}")
+
     try:
         # Пробуем разные способы регистрации
         if hasattr(dp, 'bot_started'):
-            logger.info("📝 Попытка зарегистрировать bot_started...")
+            logger.info("📝 dp.bot_started существует, попытка регистрации...")
             async def on_bot_started(event):
                 user_id = str(event.user_id)
                 logger.info(f"✅ bot_started перехвачен: {user_id}")
                 await handle_startup_event(user_id)
             dp.bot_started.register(on_bot_started)
-            logger.info("✓ bot_started зарегистрирован")
+            logger.info("✓ bot_started успешно зарегистрирован")
+        else:
+            logger.warning("⚠️ dp.bot_started не найден")
 
         if hasattr(dp, 'dialog_cleared'):
-            logger.info("📝 Попытка зарегистрировать dialog_cleared...")
+            logger.info("📝 dp.dialog_cleared существует, попытка регистрации...")
             async def on_dialog_cleared(event):
                 user_id = str(event.user_id)
                 logger.info(f"✅ dialog_cleared перехвачен: {user_id}")
                 await handle_startup_event(user_id)
             dp.dialog_cleared.register(on_dialog_cleared)
-            logger.info("✓ dialog_cleared зарегистрирован")
+            logger.info("✓ dialog_cleared успешно зарегистрирован")
+        else:
+            logger.warning("⚠️ dp.dialog_cleared не найден")
+
+        logger.info("✅ Регистрация startup handlers завершена")
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось зарегистрировать startup handlers: {type(e).__name__}: {e}")
+        logger.error(f"❌ ОШИБКА при регистрации startup handlers: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 @dp.message_callback()
