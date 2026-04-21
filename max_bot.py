@@ -212,123 +212,66 @@ async def handle_startup_event(user_id: str):
         logger.error(traceback.format_exc())
 
 
-# Попытаемся вручную зарегистрировать обработчик для startup событий
-async def register_startup_handlers():
-    """Регистрируем обработчики для bot_started и dialog_cleared"""
-    print(f"DEBUG: register_startup_handlers вызвана! (это в print, не в logger)")
-    logger.info("📋 Начинаю регистрацию startup handlers...")
-    logger.info(f"   dp type: {type(dp)}")
-    logger.info(f"   dp attributes: {[attr for attr in dir(dp) if 'start' in attr.lower() or 'clear' in attr.lower()]}")
+# Обработчик bot_started через декоратор
+@dp.bot_started()
+async def handle_bot_started(event):
+    logger.info(f"🔵 bot_started событие получено!")
+    logger.info(f"   Тип: {type(event)}")
+    logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
 
-    try:
-        # Пробуем разные способы регистрации
-        if hasattr(dp, 'bot_started'):
-            logger.info("📝 dp.bot_started существует, попытка регистрации...")
-            async def on_bot_started(event):
-                logger.info(f"🔵 bot_started событие получено!")
-                logger.info(f"   Тип: {type(event)}")
-                logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+    user_id = None
+    # Пробуем разные варианты получения user_id
+    for method_name, getter in [
+        ("event.user_id", lambda e: e.user_id),
+        ("event.user.user_id", lambda e: e.user.user_id),
+        ("event.sender.user_id", lambda e: e.sender.user_id),
+        ("event.sender_id", lambda e: e.sender_id),
+    ]:
+        try:
+            user_id = str(getter(event))
+            logger.info(f"   ✓ Успешно через {method_name}: {user_id}")
+            break
+        except (AttributeError, TypeError):
+            logger.info(f"   ✗ {method_name} не существует")
 
-                user_id = None
-                # Метод 1: прямой атрибут
-                try:
-                    user_id = str(event.user_id)
-                    logger.info(f"   ✓ user_id через event.user_id: {user_id}")
-                except AttributeError:
-                    logger.info(f"   ✗ event.user_id не существует")
+    if not user_id:
+        logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
+        logger.info(f"   Полный объект: {repr(event)}")
+        return
 
-                # Метод 2: user.user_id (как в callbacks)
-                if not user_id:
-                    try:
-                        user_id = str(event.user.user_id)
-                        logger.info(f"   ✓ user_id через event.user.user_id: {user_id}")
-                    except AttributeError:
-                        logger.info(f"   ✗ event.user.user_id не существует")
+    logger.info(f"✅ bot_started перехвачен от {user_id}")
+    await handle_startup_event(user_id)
 
-                # Метод 3: sender.user_id (как в messages)
-                if not user_id:
-                    try:
-                        user_id = str(event.sender.user_id)
-                        logger.info(f"   ✓ user_id через event.sender.user_id: {user_id}")
-                    except AttributeError:
-                        logger.info(f"   ✗ event.sender.user_id не существует")
 
-                # Метод 4: sender_id
-                if not user_id:
-                    try:
-                        user_id = str(event.sender_id)
-                        logger.info(f"   ✓ user_id через event.sender_id: {user_id}")
-                    except AttributeError:
-                        logger.info(f"   ✗ event.sender_id не существует")
+# Обработчик dialog_cleared через декоратор
+@dp.dialog_cleared()
+async def handle_dialog_cleared(event):
+    logger.info(f"🟠 dialog_cleared событие получено!")
+    logger.info(f"   Тип: {type(event)}")
+    logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
 
-                # Метод 5: печатаем весь объект если ничего не сработало
-                if not user_id:
-                    logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
+    user_id = None
+    # Пробуем разные варианты получения user_id
+    for method_name, getter in [
+        ("event.user_id", lambda e: e.user_id),
+        ("event.user.user_id", lambda e: e.user.user_id),
+        ("event.sender.user_id", lambda e: e.sender.user_id),
+        ("event.sender_id", lambda e: e.sender_id),
+    ]:
+        try:
+            user_id = str(getter(event))
+            logger.info(f"   ✓ Успешно через {method_name}: {user_id}")
+            break
+        except (AttributeError, TypeError):
+            logger.info(f"   ✗ {method_name} не существует")
 
-                if user_id:
-                    logger.info(f"✅ bot_started перехвачен от {user_id}")
-                    await handle_startup_event(user_id)
-            dp.bot_started.register(on_bot_started)
-            logger.info("✓ bot_started успешно зарегистрирован")
-        else:
-            logger.warning("⚠️ dp.bot_started не найден")
+    if not user_id:
+        logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
+        logger.info(f"   Полный объект: {repr(event)}")
+        return
 
-        if hasattr(dp, 'dialog_cleared'):
-            logger.info("📝 dp.dialog_cleared существует, попытка регистрации...")
-            async def on_dialog_cleared(event):
-                logger.info(f"🟠 dialog_cleared событие получено!")
-                logger.info(f"   Тип: {type(event)}")
-                logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
-
-                user_id = None
-                # Метод 1: прямой атрибут
-                try:
-                    user_id = str(event.user_id)
-                    logger.info(f"   ✓ user_id через event.user_id: {user_id}")
-                except AttributeError:
-                    logger.info(f"   ✗ event.user_id не существует")
-
-                # Метод 2: user.user_id (как в callbacks)
-                if not user_id:
-                    try:
-                        user_id = str(event.user.user_id)
-                        logger.info(f"   ✓ user_id через event.user.user_id: {user_id}")
-                    except AttributeError:
-                        logger.info(f"   ✗ event.user.user_id не существует")
-
-                # Метод 3: sender.user_id (как в messages)
-                if not user_id:
-                    try:
-                        user_id = str(event.sender.user_id)
-                        logger.info(f"   ✓ user_id через event.sender.user_id: {user_id}")
-                    except AttributeError:
-                        logger.info(f"   ✗ event.sender.user_id не существует")
-
-                # Метод 4: sender_id
-                if not user_id:
-                    try:
-                        user_id = str(event.sender_id)
-                        logger.info(f"   ✓ user_id через event.sender_id: {user_id}")
-                    except AttributeError:
-                        logger.info(f"   ✗ event.sender_id не существует")
-
-                # Метод 5: печатаем весь объект если ничего не сработало
-                if not user_id:
-                    logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
-
-                if user_id:
-                    logger.info(f"✅ dialog_cleared перехвачен от {user_id}")
-                    await handle_startup_event(user_id)
-            dp.dialog_cleared.register(on_dialog_cleared)
-            logger.info("✓ dialog_cleared успешно зарегистрирован")
-        else:
-            logger.warning("⚠️ dp.dialog_cleared не найден")
-
-        logger.info("✅ Регистрация startup handlers завершена")
-    except Exception as e:
-        logger.error(f"❌ ОШИБКА при регистрации startup handlers: {type(e).__name__}: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    logger.info(f"✅ dialog_cleared перехвачен от {user_id}")
+    await handle_startup_event(user_id)
 
 
 @dp.message_callback()
@@ -593,10 +536,6 @@ async def submit_application(user_id: str, message: MessageCreated):
         del user_data[user_id]
 
 
-# ВАЖНО: .register() не работает в maxapi, startup события обрабатываются через сообщения
-# Когда пользователь нажимает "Начать" или пишет /start, это приходит как обычное сообщение
-
-
 async def start_polling():
     """Запустить long polling"""
     logger.info("🚀 Запускаю Max бота...")
@@ -605,11 +544,6 @@ async def start_polling():
     # Регистрируем команды бота
     logger.info("📝 Регистрирую команды...")
     await setup_bot_commands()
-
-    # Регистрируем обработчики для startup событий
-    logger.info("📝 Регистрирую startup handlers...")
-    await register_startup_handlers()
-    logger.info("✅ Startup handlers зарегистрированы")
 
     logger.info("🎯 Запускаю long polling...")
     try:
