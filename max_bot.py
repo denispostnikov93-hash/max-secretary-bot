@@ -477,3 +477,4 @@ async def start_polling():
         logger.error(f"❌ Ошибка: {e}")
         import traceback
         logger.error(traceback.format_exc())
+# Cache bust: 1776775263
