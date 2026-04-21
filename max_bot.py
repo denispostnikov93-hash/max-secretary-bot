@@ -173,14 +173,6 @@ async def handle_start(message: MessageCreated):
     await send_start_message(user_id)
 
 
-@dp.bot_started()
-async def handle_bot_started(update):
-    """Обработчик события bot_started - нажата кнопка 'Начать'"""
-    user_id = str(update.user_id)
-    logger.info(f"🟢 bot_started от {user_id}")
-    await send_start_message(user_id)
-
-
 @dp.message_created(Command('my_id'))
 async def handle_my_id(message: MessageCreated):
     user_id = message.message.sender.user_id
@@ -190,41 +182,25 @@ async def handle_my_id(message: MessageCreated):
 
 @dp.message_created()
 async def handle_any_message(message: MessageCreated):
-    """Обработчик для любого текста - инициирует процесс если это первое сообщение"""
+    """Обработчик для любого сообщения - включает bot_started (кнопка 'начать') и текст"""
     user_id = str(message.message.sender.user_id)
     text = message.message.body.text if message.message.body and hasattr(message.message.body, 'text') else ""
     text = text.strip() if text else ""
 
-    # DEBUG: логируем всё входящее
-    logger.info(f"🔍 message_created от {user_id}")
-    logger.info(f"   text: '{text}'")
-    logger.info(f"   message.message: {message.message}")
-    logger.info(f"   message.message.body: {message.message.body}")
-    if message.message.body:
-        logger.info(f"   body dir: {[attr for attr in dir(message.message.body) if not attr.startswith('_')]}")
+    logger.info(f"🔍 message_created от {user_id}: text='{text[:20]}'")
 
     # Игнорируем команды (уже обработаны выше)
     if text.startswith('/'):
         return
 
-    # Если пользователь уже в процессе - обработаем как обычное сообщение в других обработчиках
+    # Если пользователь уже в процессе - обработаем как обычное сообщение
     if user_id in user_states and user_states[user_id] != "menu":
         return
 
-    # Первое сообщение (даже пустое) или в главном меню - показываем стартовое сообщение
+    # Первое сообщение (пустое при bot_started или любой текст) - показываем приветствие
     if user_id not in user_data:
-        logger.info(f"📨 Первое сообщение от {user_id}: '{text[:30]}'")
-        user_data[user_id] = {
-            'consent_pd': False, 'consent_policy': False,
-            'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
-        }
-        user_states[user_id] = "menu"
-
-        await message.message.answer(
-            text="👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права.",
-            attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
-        )
-        logger.info(f"✓ Стартовое сообщение отправлено {user_id}")
+        logger.info(f"🟢 Первый контакт от {user_id} (может быть bot_started или текст)")
+        await send_start_message(user_id)
 
 
 @dp.message_callback()
