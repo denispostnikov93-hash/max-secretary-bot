@@ -20,6 +20,19 @@ if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
 bot = Bot(token=MAX_BOT_TOKEN)
 dp = Dispatcher()
 
+# Пытаемся зарегистрировать обработчики для startup событий
+try:
+    dp.bot_started.register(handle_startup_events)
+    logger.info("✓ Зарегистрирован обработчик bot_started")
+except Exception as e:
+    logger.warning(f"⚠️ Не удалось зарегистрировать bot_started: {e}")
+
+try:
+    dp.dialog_cleared.register(handle_startup_events)
+    logger.info("✓ Зарегистрирован обработчик dialog_cleared")
+except Exception as e:
+    logger.warning(f"⚠️ Не удалось зарегистрировать dialog_cleared: {e}")
+
 admin_id = int(MAX_ADMIN_USER_ID) if isinstance(MAX_ADMIN_USER_ID, str) else MAX_ADMIN_USER_ID
 
 user_data = {}
@@ -27,6 +40,28 @@ user_states = {}
 
 logger.info(f"🔐 MAX_BOT_TOKEN установлен: {bool(MAX_BOT_TOKEN)}")
 logger.info(f"👤 MAX_ADMIN_USER_ID: {admin_id}")
+
+
+async def handle_startup_events(update):
+    """Обработчик для событий bot_started и dialog_cleared"""
+    user_id = None
+    event_type = None
+
+    # Проверяем тип события и достаём user_id
+    if hasattr(update, 'bot_started'):
+        event_type = "bot_started"
+        if hasattr(update.bot_started, 'user_id'):
+            user_id = str(update.bot_started.user_id)
+    elif hasattr(update, 'dialog_cleared'):
+        event_type = "dialog_cleared"
+        if hasattr(update.dialog_cleared, 'user_id'):
+            user_id = str(update.dialog_cleared.user_id)
+
+    if user_id:
+        logger.info(f"🟢 {event_type} от {user_id}")
+        await send_start_message(user_id)
+    else:
+        logger.warning(f"⚠️ {event_type} но user_id не найден в update")
 
 
 async def setup_bot_commands():
@@ -171,18 +206,6 @@ async def handle_start(message: MessageCreated):
     user_id = str(message.message.sender.user_id)
     logger.info(f"📨 /start от {user_id}")
     await send_start_message(user_id)
-
-
-# Обработчик для события bot_started (нажата кнопка "начать")
-try:
-    @dp.bot_started()
-    async def handle_bot_started(update):
-        """Обработчик события bot_started"""
-        user_id = str(update.user_id)
-        logger.info(f"🟢 bot_started от {user_id}")
-        await send_start_message(user_id)
-except Exception as e:
-    logger.warning(f"⚠️ Не удалось зарегистрировать bot_started обработчик: {e}")
 
 
 @dp.message_created(Command('my_id'))
