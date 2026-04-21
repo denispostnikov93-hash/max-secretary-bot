@@ -39,16 +39,24 @@ def make_keyboard(*buttons):
 async def get_user_phone(user_id: str) -> str:
     """Получить номер телефона пользователя из профиля Max"""
     try:
+        logger.info(f"🔍 Пытаюсь получить информацию о пользователе {user_id}")
         # Пытаемся получить информацию о пользователе
         user_info = await bot.get_user(user_id=int(user_id))
+        logger.info(f"🔍 user_info: {user_info}")
+        logger.info(f"🔍 user_info type: {type(user_info)}")
+        logger.info(f"🔍 user_info dir: {dir(user_info)}")
+
         if hasattr(user_info, 'phone') and user_info.phone:
             logger.info(f"✓ Получен телефон из профиля: {user_info.phone}")
             return user_info.phone
         else:
             logger.warning(f"⚠️ Телефон не найден в профиле пользователя {user_id}")
+            logger.warning(f"⚠️ Доступные атрибуты: {[attr for attr in dir(user_info) if not attr.startswith('_')]}")
             return "Не указан"
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось получить профиль пользователя: {e}")
+        logger.warning(f"⚠️ Не удалось получить профиль пользователя: {type(e).__name__}: {e}")
+        import traceback
+        logger.warning(traceback.format_exc())
         return "Не указан"
 
 
