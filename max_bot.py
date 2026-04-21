@@ -147,8 +147,11 @@ async def send_admin_message(text: str):
 
 # ===== ОБРАБОТЧИКИ =====
 
-async def send_start_message(user_id: str):
+async def send_start_message(user_id: str, chat_id: str = None):
     """Отправить приветственное сообщение"""
+    if chat_id is None:
+        chat_id = user_id
+
     user_data[user_id] = {
         'consent_pd': False, 'consent_policy': False,
         'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
@@ -158,7 +161,7 @@ async def send_start_message(user_id: str):
     text = "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права."
 
     await bot.send_message(
-        chat_id=user_id,
+        chat_id=chat_id,
         text=text,
         attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
     )
@@ -169,8 +172,9 @@ async def send_start_message(user_id: str):
 async def handle_start(message: MessageCreated):
     """Команда /start"""
     user_id = str(message.message.sender.user_id)
+    chat_id = str(message.message.chat.chat_id)
     logger.info(f"📨 /start от {user_id}")
-    await send_start_message(user_id)
+    await send_start_message(user_id, chat_id)
 
 
 @dp.message_created(Command('my_id'))
@@ -304,6 +308,7 @@ async def ask_client_type(message, user_id: str):
 async def handle_message(message: MessageCreated):
     try:
         user_id = str(message.message.sender.user_id)
+        chat_id = str(message.message.chat.chat_id)
         text = message.message.body.text if message.message.body and hasattr(message.message.body, 'text') else ""
         text = text.strip() if text else ""
 
@@ -326,14 +331,14 @@ async def handle_message(message: MessageCreated):
             }
             user_states[user_id] = "menu"
             logger.info(f"   Вызываю send_start_message...")
-            await send_start_message(user_id)
+            await send_start_message(user_id, chat_id)
             logger.info(f"   ✓ send_start_message завершена")
             return
 
         # Если пользователь в главном меню - показываем приветствие снова
         if state == "menu" or state is None:
             logger.info(f"ℹ️ {user_id} в меню или без состояния - показываю приветствие")
-            await send_start_message(user_id)
+            await send_start_message(user_id, chat_id)
             return
     except Exception as e:
         logger.error(f"❌ ОШИБКА в handle_message: {type(e).__name__}: {e}")
