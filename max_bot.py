@@ -331,7 +331,7 @@ async def send_refusal_notification(user_id: str):
             f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
             f"{'━' * 40}\n"
             f"Пользователь отказал в согласии на обработку ПД\n"
-            f"👤 User ID: {user_id}\n"
+            f"👤 Профиль: https://web.max.ru/{user_id}\n"
         )
         if phone_from_profile:
             message += f"📱 Телефон (профиль): {phone_from_profile}\n"
@@ -390,7 +390,7 @@ async def submit_application(user_id: str, message: MessageCreated):
             f"\n✅ Согласия:\n"
             f"  • Обработка ПД: {'✅ Да' if data['consent_pd'] else '❌ Нет'}\n"
             f"  • Политика: {'✅ Да' if data['consent_policy'] else '❌ Нет'}\n"
-            f"\n👤 Max ID: {user_id}\n"
+            f"\n👤 Профиль: https://web.max.ru/{user_id}\n"
             f"📲 Источник: Max\n"
             f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
             f"{'━' * 30}"
