@@ -257,8 +257,6 @@ async def handle_callback(callback: MessageCallback):
             )
         )
 
-    await callback.answer_callback()
-
 
 async def ask_client_type(message, user_id: str):
     """Спросить тип клиента после согласия"""
