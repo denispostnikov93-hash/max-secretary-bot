@@ -13,6 +13,20 @@ from database import db
 
 logger = logging.getLogger(__name__)
 
+logger.info(f"🔍 DEBUG config.MAX_BOT_TOKEN: value='{MAX_BOT_TOKEN[:10]}...' type={type(MAX_BOT_TOKEN).__name__} len={len(MAX_BOT_TOKEN) if MAX_BOT_TOKEN else 0}")
+logger.info(f"🔍 DEBUG config.MAX_ADMIN_USER_ID: '{MAX_ADMIN_USER_ID}'")
+
+import os
+logger.info(f"🔍 DEBUG os.environ.MAX_BOT_TOKEN: {bool(os.environ.get('MAX_BOT_TOKEN'))} (len={len(os.environ.get('MAX_BOT_TOKEN', '')) if os.environ.get('MAX_BOT_TOKEN') else 0})")
+logger.info(f"🔍 DEBUG os.getenv.MAX_BOT_TOKEN: {bool(os.getenv('MAX_BOT_TOKEN'))} (len={len(os.getenv('MAX_BOT_TOKEN', '')) if os.getenv('MAX_BOT_TOKEN') else 0})")
+
+if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
+    logger.error("❌ CRITICAL: MAX_BOT_TOKEN is empty or None!")
+    logger.error(f"❌ MAX_BOT_TOKEN from config: '{MAX_BOT_TOKEN}'")
+    logger.error(f"❌ os.environ['MAX_BOT_TOKEN']: '{os.environ.get('MAX_BOT_TOKEN', 'NOT SET')}'")
+    logger.error(f"❌ os.getenv('MAX_BOT_TOKEN'): '{os.getenv('MAX_BOT_TOKEN', 'NOT SET')}'")
+    raise ValueError("MAX_BOT_TOKEN environment variable is not set or empty")
+
 bot = Bot(token=MAX_BOT_TOKEN)
 dp = Dispatcher()
 
