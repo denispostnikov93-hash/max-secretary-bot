@@ -215,6 +215,7 @@ async def handle_startup_event(user_id: str):
 # Попытаемся вручную зарегистрировать обработчик для startup событий
 async def register_startup_handlers():
     """Регистрируем обработчики для bot_started и dialog_cleared"""
+    print(f"DEBUG: register_startup_handlers вызвана! (это в print, не в logger)")
     logger.info("📋 Начинаю регистрацию startup handlers...")
     logger.info(f"   dp type: {type(dp)}")
     logger.info(f"   dp attributes: {[attr for attr in dir(dp) if 'start' in attr.lower() or 'clear' in attr.lower()]}")
@@ -522,11 +523,15 @@ async def start_polling():
     logger.info("=" * 60)
 
     # Регистрируем команды бота
+    logger.info("📝 Регистрирую команды...")
     await setup_bot_commands()
 
     # Регистрируем обработчики для startup событий
+    logger.info("📝 Регистрирую startup handlers...")
     await register_startup_handlers()
+    logger.info("✅ Startup handlers зарегистрированы")
 
+    logger.info("🎯 Запускаю long polling...")
     try:
         await dp.start_polling(bot)
     except KeyboardInterrupt:
