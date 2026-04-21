@@ -15,7 +15,7 @@ from database import db
 logger = logging.getLogger(__name__)
 
 # Version marker - helps debug Railway caching
-logger.info("🔧 BOT VERSION: v8.0 - Using @dp.bot_started() and @dp.dialog_cleared() decorators")
+logger.info("🔧 BOT VERSION: v8.2 - Finding correct chat_id for startup events")
 
 if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
     raise ValueError("MAX_BOT_TOKEN environment variable is not set or empty")
@@ -189,13 +189,13 @@ async def handle_my_id(message: MessageCreated):
     logger.info(f"📨 /my_id от {user_id}")
 
 
-async def handle_startup_event(user_id: str):
+async def handle_startup_event_with_chat(user_id: str, chat_id: int):
     """Отправить приветствие при startup событиях"""
     try:
-        logger.info(f"🟢 Startup event от {user_id}")
+        logger.info(f"🟢 Startup event от user_id={user_id}, chat_id={chat_id}")
         text = "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права."
         await bot.send_message(
-            chat_id=user_id,
+            chat_id=chat_id,
             text=text,
             attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
         )
@@ -207,7 +207,7 @@ async def handle_startup_event(user_id: str):
         user_states[user_id] = "menu"
         logger.info(f"✓ Приветствие отправлено при startup от {user_id}")
     except Exception as e:
-        logger.error(f"❌ ОШИБКА в handle_startup_event: {type(e).__name__}: {e}")
+        logger.error(f"❌ ОШИБКА в handle_startup_event_with_chat: {type(e).__name__}: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
@@ -216,94 +216,94 @@ async def handle_startup_event(user_id: str):
 @dp.bot_started()
 async def handle_bot_started(event):
     logger.info(f"🔵 bot_started событие получено! Тип: {type(event).__name__}")
+    logger.info(f"   Доступные атрибуты: {[a for a in dir(event) if not a.startswith('_')]}")
 
     user_id = None
+    chat_id = None
 
-    # Метод 1: event.user_id
-    if not user_id:
-        try:
-            user_id = str(event.user_id)
-            logger.info(f"   ✓ Метод 1: event.user_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 1 failed: {type(e).__name__}")
-
-    # Метод 2: event.user.user_id
-    if not user_id:
-        try:
-            user_id = str(event.user.user_id)
-            logger.info(f"   ✓ Метод 2: event.user.user_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 2 failed: {type(e).__name__}")
-
-    # Метод 3: event.sender.user_id
-    if not user_id:
-        try:
-            user_id = str(event.sender.user_id)
-            logger.info(f"   ✓ Метод 3: event.sender.user_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 3 failed: {type(e).__name__}")
-
-    # Метод 4: event.sender_id
-    if not user_id:
-        try:
-            user_id = str(event.sender_id)
-            logger.info(f"   ✓ Метод 4: event.sender_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 4 failed: {type(e).__name__}")
-
-    if not user_id:
-        logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
+    # Ищем user_id
+    try:
+        user_id = str(event.user.user_id)
+        logger.info(f"   ✓ user_id = {user_id}")
+    except (AttributeError, TypeError):
+        logger.info(f"   ✗ Не нашли user_id")
         return
 
-    logger.info(f"✅ bot_started перехвачен от {user_id}")
-    await handle_startup_event(user_id)
+    # Ищем chat_id
+    try:
+        chat_id = event.chat_id
+        logger.info(f"   ✓ chat_id (прямой) = {chat_id}")
+    except (AttributeError, TypeError):
+        pass
+
+    if not chat_id:
+        try:
+            chat_id = event.message.chat.chat_id
+            logger.info(f"   ✓ chat_id (через message.chat) = {chat_id}")
+        except (AttributeError, TypeError):
+            pass
+
+    if not chat_id:
+        try:
+            chat_id = event.dialog.dialog_id
+            logger.info(f"   ✓ chat_id (через dialog) = {chat_id}")
+        except (AttributeError, TypeError):
+            pass
+
+    if not chat_id:
+        logger.warning(f"⚠️ Не нашли chat_id! Объект: {event}")
+        logger.info(f"   dict(event): {event.model_dump() if hasattr(event, 'model_dump') else vars(event)}")
+        return
+
+    logger.info(f"✅ bot_started: user_id={user_id}, chat_id={chat_id}")
+    await handle_startup_event_with_chat(user_id, chat_id)
 
 
 # Обработчик dialog_cleared через декоратор
 @dp.dialog_cleared()
 async def handle_dialog_cleared(event):
     logger.info(f"🟠 dialog_cleared событие получено! Тип: {type(event).__name__}")
+    logger.info(f"   Доступные атрибуты: {[a for a in dir(event) if not a.startswith('_')]}")
 
     user_id = None
+    chat_id = None
 
-    # Метод 1: event.user_id
-    if not user_id:
-        try:
-            user_id = str(event.user_id)
-            logger.info(f"   ✓ Метод 1: event.user_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 1 failed: {type(e).__name__}")
-
-    # Метод 2: event.user.user_id
-    if not user_id:
-        try:
-            user_id = str(event.user.user_id)
-            logger.info(f"   ✓ Метод 2: event.user.user_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 2 failed: {type(e).__name__}")
-
-    # Метод 3: event.sender.user_id
-    if not user_id:
-        try:
-            user_id = str(event.sender.user_id)
-            logger.info(f"   ✓ Метод 3: event.sender.user_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 3 failed: {type(e).__name__}")
-
-    # Метод 4: event.sender_id
-    if not user_id:
-        try:
-            user_id = str(event.sender_id)
-            logger.info(f"   ✓ Метод 4: event.sender_id = {user_id}")
-        except (AttributeError, TypeError) as e:
-            logger.info(f"   ✗ Метод 4 failed: {type(e).__name__}")
-
-    if not user_id:
-        logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
+    # Ищем user_id
+    try:
+        user_id = str(event.user.user_id)
+        logger.info(f"   ✓ user_id = {user_id}")
+    except (AttributeError, TypeError):
+        logger.info(f"   ✗ Не нашли user_id")
         return
 
-    logger.info(f"✅ dialog_cleared перехвачен от {user_id}")
-    await handle_startup_event(user_id)
+    # Ищем chat_id
+    try:
+        chat_id = event.chat_id
+        logger.info(f"   ✓ chat_id (прямой) = {chat_id}")
+    except (AttributeError, TypeError):
+        pass
+
+    if not chat_id:
+        try:
+            chat_id = event.message.chat.chat_id
+            logger.info(f"   ✓ chat_id (через message.chat) = {chat_id}")
+        except (AttributeError, TypeError):
+            pass
+
+    if not chat_id:
+        try:
+            chat_id = event.dialog.dialog_id
+            logger.info(f"   ✓ chat_id (через dialog) = {chat_id}")
+        except (AttributeError, TypeError):
+            pass
+
+    if not chat_id:
+        logger.warning(f"⚠️ Не нашли chat_id! Объект: {event}")
+        logger.info(f"   dict(event): {event.model_dump() if hasattr(event, 'model_dump') else vars(event)}")
+        return
+
+    logger.info(f"✅ dialog_cleared: user_id={user_id}, chat_id={chat_id}")
+    await handle_startup_event_with_chat(user_id, chat_id)
 
 
 @dp.message_callback()
