@@ -179,6 +179,14 @@ async def handle_any_message(message: MessageCreated):
     text = message.message.body.text if message.message.body and hasattr(message.message.body, 'text') else ""
     text = text.strip() if text else ""
 
+    # DEBUG: логируем всё входящее
+    logger.info(f"🔍 message_created от {user_id}")
+    logger.info(f"   text: '{text}'")
+    logger.info(f"   message.message: {message.message}")
+    logger.info(f"   message.message.body: {message.message.body}")
+    if message.message.body:
+        logger.info(f"   body dir: {[attr for attr in dir(message.message.body) if not attr.startswith('_')]}")
+
     # Игнорируем команды (уже обработаны выше)
     if text.startswith('/'):
         return
