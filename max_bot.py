@@ -20,8 +20,6 @@ if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
 bot = Bot(token=MAX_BOT_TOKEN)
 dp = Dispatcher()
 
-# Регистрация startup событий будет в конце файла, после определения всех функций
-
 admin_id = int(MAX_ADMIN_USER_ID) if isinstance(MAX_ADMIN_USER_ID, str) else MAX_ADMIN_USER_ID
 
 user_data = {}
@@ -29,28 +27,6 @@ user_states = {}
 
 logger.info(f"🔐 MAX_BOT_TOKEN установлен: {bool(MAX_BOT_TOKEN)}")
 logger.info(f"👤 MAX_ADMIN_USER_ID: {admin_id}")
-
-
-async def handle_startup_events(update):
-    """Обработчик для событий bot_started и dialog_cleared"""
-    user_id = None
-    event_type = None
-
-    # Проверяем тип события и достаём user_id
-    if hasattr(update, 'bot_started'):
-        event_type = "bot_started"
-        if hasattr(update.bot_started, 'user_id'):
-            user_id = str(update.bot_started.user_id)
-    elif hasattr(update, 'dialog_cleared'):
-        event_type = "dialog_cleared"
-        if hasattr(update.dialog_cleared, 'user_id'):
-            user_id = str(update.dialog_cleared.user_id)
-
-    if user_id:
-        logger.info(f"🟢 {event_type} от {user_id}")
-        await send_start_message(user_id)
-    else:
-        logger.warning(f"⚠️ {event_type} но user_id не найден в update")
 
 
 async def setup_bot_commands():
