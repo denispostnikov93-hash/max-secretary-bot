@@ -4,29 +4,44 @@
 import os
 import sys
 
+print("[CONFIG LOAD] Starting config.py", file=sys.stderr)
+
+# Debug: print all environment variables
+print("[ENV DUMP] All environment variables starting with MAX, DATABASE, RAILWAY:", file=sys.stderr)
+for key in sorted(os.environ.keys()):
+    if any(prefix in key for prefix in ['MAX', 'DATABASE', 'RAILWAY', 'PORT', 'TOKEN']):
+        val = os.environ[key]
+        print(f"  {key}={val[:40] if len(val) > 40 else val}", file=sys.stderr)
+
 # Load from .env only if it exists (for local development)
+print("[CONFIG] Checking for .env file...", file=sys.stderr)
 try:
     from dotenv import load_dotenv
     if os.path.exists('.env'):
+        print("[CONFIG] .env found, loading...", file=sys.stderr)
         load_dotenv(override=False)
+    else:
+        print("[CONFIG] .env NOT found", file=sys.stderr)
 except ImportError:
+    print("[CONFIG] python-dotenv not available", file=sys.stderr)
     pass
 
-# Debug: print all environment variables that start with MAX
-print("[DEBUG CONFIG] Environment variables:", file=sys.stderr)
-for key in sorted(os.environ.keys()):
-    if key.startswith('MAX') or key.startswith('DATABASE'):
-        print(f"  {key}={os.environ[key][:20] if len(os.environ[key]) > 20 else os.environ[key]}", file=sys.stderr)
-
 # ===== MAX =====
-# Используем os.environ для явного доступа к переменным Railway
-MAX_BOT_TOKEN = os.environ.get('MAX_BOT_TOKEN') or os.getenv('MAX_BOT_TOKEN', '')
+print("[CONFIG] Reading MAX_BOT_TOKEN...", file=sys.stderr)
+env_token = os.environ.get('MAX_BOT_TOKEN')
+getenv_token = os.getenv('MAX_BOT_TOKEN', '')
+print(f"[CONFIG]   os.environ.get()={repr(env_token)}", file=sys.stderr)
+print(f"[CONFIG]   os.getenv()={repr(getenv_token)}", file=sys.stderr)
+
+MAX_BOT_TOKEN = env_token or getenv_token
+print(f"[CONFIG]   Final MAX_BOT_TOKEN={repr(MAX_BOT_TOKEN[:30] if MAX_BOT_TOKEN else MAX_BOT_TOKEN)}", file=sys.stderr)
+
 MAX_ADMIN_USER_ID = os.environ.get('MAX_ADMIN_USER_ID') or os.getenv('MAX_ADMIN_USER_ID', '240134783')
 MAX_ADMIN_PHONE = os.environ.get('MAX_ADMIN_PHONE') or os.getenv('MAX_ADMIN_PHONE', '+79859998589')
 WEBHOOK_URL = os.environ.get('WEBHOOK_URL') or os.getenv('WEBHOOK_URL', 'http://localhost:8080/webhook')
 WEBHOOK_PORT = int(os.environ.get('WEBHOOK_PORT') or os.getenv('WEBHOOK_PORT', '8080'))
 
-print(f"[DEBUG CONFIG] MAX_BOT_TOKEN set: {bool(MAX_BOT_TOKEN)}", file=sys.stderr)
+print(f"[CONFIG DONE] MAX_BOT_TOKEN length={len(MAX_BOT_TOKEN)}", file=sys.stderr)
 
 # ===== DATABASE =====
 DATABASE_PATH = os.environ.get('DATABASE_PATH') or os.getenv('DATABASE_PATH', 'applications.db')

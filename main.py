@@ -1,9 +1,20 @@
 """
 Max бот-секретарь
 """
+import sys
+print("[START] main.py initializing", file=sys.stderr)
+
 import asyncio
 import logging
+import os
+
+print(f"[ENV] All MAX_ variables:", file=sys.stderr)
+for k, v in os.environ.items():
+    if k.startswith('MAX'):
+        print(f"  {k}={v[:30] if len(v) > 30 else v}", file=sys.stderr)
+
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID
+print(f"[IMPORT] MAX_BOT_TOKEN from config: {repr(MAX_BOT_TOKEN[:20] if MAX_BOT_TOKEN else MAX_BOT_TOKEN)}", file=sys.stderr)
 from database import db
 from max_bot import start_polling
 
