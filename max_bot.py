@@ -40,21 +40,31 @@ async def get_user_phone(user_id: str) -> str:
     """Получить номер телефона пользователя из профиля Max"""
     try:
         logger.info(f"🔍 Пытаюсь получить информацию о пользователе {user_id}")
-        # Пытаемся получить информацию о пользователе
-        user_info = await bot.get_user(user_id=int(user_id))
-        logger.info(f"🔍 user_info: {user_info}")
-        logger.info(f"🔍 user_info type: {type(user_info)}")
-        logger.info(f"🔍 user_info dir: {dir(user_info)}")
 
-        if hasattr(user_info, 'phone') and user_info.phone:
-            logger.info(f"✓ Получен телефон из профиля: {user_info.phone}")
-            return user_info.phone
+        # Пытаемся получить информацию о пользователе через API
+        if hasattr(bot, 'get_user'):
+            user_info = await bot.get_user(user_id=int(user_id))
+            logger.info(f"🔍 user_info: {user_info}")
+            logger.info(f"🔍 user_info type: {type(user_info)}")
+            logger.info(f"🔍 user_info dict: {vars(user_info) if hasattr(user_info, '__dict__') else 'no dict'}")
+
+            # Проверяем разные варианты где может быть номер
+            if hasattr(user_info, 'phone') and user_info.phone:
+                logger.info(f"✓ Получен телефон из профиля (phone): {user_info.phone}")
+                return user_info.phone
+            elif hasattr(user_info, 'contacts') and user_info.contacts:
+                logger.info(f"✓ Получены контакты: {user_info.contacts}")
+                return str(user_info.contacts)
+            else:
+                logger.warning(f"⚠️ Телефон не найден в профиле")
+                logger.warning(f"⚠️ Атрибуты user_info: {[attr for attr in dir(user_info) if not attr.startswith('_')]}")
+                return "Не указан"
         else:
-            logger.warning(f"⚠️ Телефон не найден в профиле пользователя {user_id}")
-            logger.warning(f"⚠️ Доступные атрибуты: {[attr for attr in dir(user_info) if not attr.startswith('_')]}")
+            logger.warning(f"⚠️ bot.get_user не существует")
             return "Не указан"
+
     except Exception as e:
-        logger.warning(f"⚠️ Не удалось получить профиль пользователя: {type(e).__name__}: {e}")
+        logger.warning(f"⚠️ Не удалось получить профиль: {type(e).__name__}: {e}")
         import traceback
         logger.warning(traceback.format_exc())
         return "Не указан"
