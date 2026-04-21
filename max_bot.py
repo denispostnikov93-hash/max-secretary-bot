@@ -225,9 +225,22 @@ async def register_startup_handlers():
         if hasattr(dp, 'bot_started'):
             logger.info("📝 dp.bot_started существует, попытка регистрации...")
             async def on_bot_started(event):
-                user_id = str(event.user_id)
-                logger.info(f"✅ bot_started перехвачен: {user_id}")
-                await handle_startup_event(user_id)
+                logger.info(f"   bot_started event type: {type(event)}")
+                logger.info(f"   bot_started event attrs: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+                # Пробуем разные варианты получения user_id
+                user_id = None
+                if hasattr(event, 'user_id'):
+                    user_id = str(event.user_id)
+                elif hasattr(event, 'user') and hasattr(event.user, 'user_id'):
+                    user_id = str(event.user.user_id)
+                elif hasattr(event, 'sender_id'):
+                    user_id = str(event.sender_id)
+
+                if user_id:
+                    logger.info(f"✅ bot_started перехвачен: {user_id}")
+                    await handle_startup_event(user_id)
+                else:
+                    logger.warning(f"⚠️ Не смог получить user_id из bot_started события")
             dp.bot_started.register(on_bot_started)
             logger.info("✓ bot_started успешно зарегистрирован")
         else:
@@ -236,9 +249,22 @@ async def register_startup_handlers():
         if hasattr(dp, 'dialog_cleared'):
             logger.info("📝 dp.dialog_cleared существует, попытка регистрации...")
             async def on_dialog_cleared(event):
-                user_id = str(event.user_id)
-                logger.info(f"✅ dialog_cleared перехвачен: {user_id}")
-                await handle_startup_event(user_id)
+                logger.info(f"   dialog_cleared event type: {type(event)}")
+                logger.info(f"   dialog_cleared event attrs: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+                # Пробуем разные варианты получения user_id
+                user_id = None
+                if hasattr(event, 'user_id'):
+                    user_id = str(event.user_id)
+                elif hasattr(event, 'user') and hasattr(event.user, 'user_id'):
+                    user_id = str(event.user.user_id)
+                elif hasattr(event, 'sender_id'):
+                    user_id = str(event.sender_id)
+
+                if user_id:
+                    logger.info(f"✅ dialog_cleared перехвачен: {user_id}")
+                    await handle_startup_event(user_id)
+                else:
+                    logger.warning(f"⚠️ Не смог получить user_id из dialog_cleared события")
             dp.dialog_cleared.register(on_dialog_cleared)
             logger.info("✓ dialog_cleared успешно зарегистрирован")
         else:
