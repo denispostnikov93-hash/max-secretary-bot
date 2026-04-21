@@ -80,11 +80,18 @@ def parse_category_and_description(text: str, client_type: str) -> tuple:
 async def send_admin_message(text: str):
     """Отправить сообщение админу"""
     try:
-        logger.info(f"📤 Попытка отправить сообщение админу (ID: {admin_id})")
+        logger.info(f"📤 Попытка отправить сообщение админу (ID: {admin_id}, type: {type(admin_id).__name__})")
         logger.info(f"📝 Текст: {text[:100]}...")
-        result = await bot.send_message(chat_id=str(admin_id), text=text)
-        logger.info(f"✓ Сообщение админу отправлено успешно: {result}")
-        return True
+        # Пробуем отправить по user_id (как int и как str)
+        try:
+            result = await bot.send_message(chat_id=admin_id, text=text)
+            logger.info(f"✓ Сообщение админу отправлено (chat_id как int)")
+            return True
+        except Exception as e1:
+            logger.warning(f"⚠️ Не получилось с int, пробуем со str: {e1}")
+            result = await bot.send_message(chat_id=str(admin_id), text=text)
+            logger.info(f"✓ Сообщение админу отправлено (chat_id как str)")
+            return True
     except Exception as e:
         logger.error(f"✗ ОШИБКА отправки админу: {type(e).__name__}: {e}")
         import traceback
