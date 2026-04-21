@@ -29,6 +29,24 @@ logger.info(f"🔐 MAX_BOT_TOKEN установлен: {bool(MAX_BOT_TOKEN)}")
 logger.info(f"👤 MAX_ADMIN_USER_ID: {admin_id}")
 
 
+async def setup_bot_commands():
+    """Регистрировать команды бота в Max API"""
+    try:
+        # Проверяем, доступен ли метод set_commands в maxapi
+        if hasattr(bot, 'set_commands'):
+            logger.info("📝 Регистрирую команды бота в Max...")
+            commands = [
+                Command(command='start', description='Начать работу с ботом'),
+                Command(command='my_id', description='Получить ваш Max ID'),
+            ]
+            await bot.set_commands(commands)
+            logger.info("✓ Команды зарегистрированы")
+        else:
+            logger.warning("⚠️ Метод set_commands не доступен в maxapi")
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось зарегистрировать команды: {e}")
+
+
 def make_keyboard(*buttons):
     """Создать InlineKeyboard из кортежей (text, payload)"""
     kb = InlineKeyboardBuilder()
@@ -439,6 +457,10 @@ async def start_polling():
     """Запустить long polling"""
     logger.info("🚀 Запускаю Max бота...")
     logger.info("=" * 60)
+
+    # Регистрируем команды бота
+    await setup_bot_commands()
+
     try:
         await dp.start_polling(bot)
     except KeyboardInterrupt:
