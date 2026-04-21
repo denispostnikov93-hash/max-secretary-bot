@@ -348,6 +348,10 @@ async def handle_message(message: MessageCreated):
 
         state = user_states.get(user_id)
         logger.info(f"📨 {user_id} (state={state}): {text[:50]}")
+        logger.info(f"   DEBUG: user_id in user_data = {user_id in user_data}")
+        logger.info(f"   DEBUG: state = {repr(state)}")
+        logger.info(f"   DEBUG: state == 'menu' = {state == 'menu'}")
+        logger.info(f"   DEBUG: state is None = {state is None}")
 
         # Первый контакт - показываем приветствие
         if user_id not in user_data:
