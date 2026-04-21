@@ -1,6 +1,6 @@
 """
 Max бот-секретарь — приём заявок на консультации
-Использует maxapi с Long Polling (без attachments)
+Использует maxapi с Long Polling и интерактивными кнопками
 """
 import logging
 import re
@@ -16,15 +16,7 @@ logger = logging.getLogger(__name__)
 import os
 import sys
 
-# Debug: print to stderr to ensure visibility
-print(f"[DEBUG] MAX_BOT_TOKEN from config: type={type(MAX_BOT_TOKEN).__name__}, value={'<empty>' if not MAX_BOT_TOKEN else f'{str(MAX_BOT_TOKEN)[:20]}...'}", file=sys.stderr)
-print(f"[DEBUG] os.environ.get('MAX_BOT_TOKEN'): {bool(os.environ.get('MAX_BOT_TOKEN'))}", file=sys.stderr)
-print(f"[DEBUG] os.getenv('MAX_BOT_TOKEN'): {bool(os.getenv('MAX_BOT_TOKEN'))}", file=sys.stderr)
-
 if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
-    print(f"[ERROR] MAX_BOT_TOKEN is None or empty!", file=sys.stderr)
-    print(f"[ERROR] MAX_BOT_TOKEN={repr(MAX_BOT_TOKEN)}", file=sys.stderr)
-    print(f"[ERROR] os.environ.MAX_BOT_TOKEN={repr(os.environ.get('MAX_BOT_TOKEN'))}", file=sys.stderr)
     raise ValueError("MAX_BOT_TOKEN environment variable is not set or empty")
 
 bot = Bot(token=MAX_BOT_TOKEN)
@@ -37,6 +29,38 @@ user_states = {}
 
 logger.info(f"🔐 MAX_BOT_TOKEN установлен: {bool(MAX_BOT_TOKEN)}")
 logger.info(f"👤 MAX_ADMIN_USER_ID: {admin_id}")
+
+
+def make_keyboard(buttons):
+    """Создать inline keyboard с кнопками
+    buttons: список кортежей (text, payload)
+    """
+    return [
+        {
+            "type": "inline_keyboard",
+            "payload": {
+                "buttons": [[
+                    {"type": "callback", "text": text, "payload": payload}
+                    for text, payload in buttons
+                ]]
+            }
+        }
+    ]
+
+
+async def send_message_with_buttons(chat_id, text, buttons):
+    """Отправить сообщение с интерактивными кнопками"""
+    try:
+        await bot.send_message(
+            chat_id=str(chat_id),
+            text=text,
+            attachments=make_keyboard(buttons)
+        )
+        logger.info(f"✓ Сообщение с кнопками отправлено пользователю {chat_id}")
+        return True
+    except Exception as e:
+        logger.error(f"✗ Ошибка отправки сообщения с кнопками: {e}")
+        return False
 
 
 def validate_phone(phone: str) -> bool:
@@ -67,17 +91,18 @@ async def handle_start(message: MessageCreated):
         'consent_pd': False, 'consent_policy': False, 'in_consent_step': False,
         'client_type': None, 'category': None, 'name': None, 'phone': None
     }
-    user_states[user_id] = None
+    user_states[user_id] = "menu"
 
     text = (
         "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\n"
-        "Мы поможем защитить ваши права.\n\n"
-        "Для записи на консультацию введите свой выбор:\n"
-        "1 - Записаться\n"
-        "2 - Помощь"
+        "Мы поможем защитить ваши права."
     )
 
-    await message.message.answer(text=text)
+    await send_message_with_buttons(
+        user_id,
+        text,
+        [("📝 Записаться", "record"), ("☎️ Помощь", "help")]
+    )
     logger.info(f"📨 /start от {user_id}")
 
 
@@ -97,7 +122,8 @@ async def handle_message(message: MessageCreated):
         return
 
     text = text.strip()
-    logger.info(f"📨 Текст от {user_id}: {text[:50]}")
+    state = user_states.get(user_id)
+    logger.info(f"📨 Текст от {user_id} (state={state}): {text[:50]}")
 
     if user_id not in user_data:
         user_data[user_id] = {
@@ -105,146 +131,173 @@ async def handle_message(message: MessageCreated):
             'client_type': None, 'category': None, 'name': None, 'phone': None
         }
 
-    # Выбор действия
-    if text == "1":
-        data = user_data[user_id]
-        if not data.get('in_consent_step'):
-            data['in_consent_step'] = True
-            msg = (
-                f"📋 Чтобы продолжить, прочитайте и подтвердите:\n\n"
-                f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n"
-                f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
-                f"Введите:\n"
-                f"да - Я согласен\n"
-                f"нет - Отказать"
-            )
-            await message.message.answer(text=msg)
-        return
-
-    if text == "2":
-        await message.message.answer(text="☎️ Позвоните нам: 8-495-999-85-89")
-        return
-
-    # Согласие
-    if text.lower() in ["да", "yes", "y", "согласен"]:
-        data = user_data[user_id]
-        if data.get('in_consent_step'):
-            data['consent_pd'] = True
-            data['consent_policy'] = True
-            data['in_consent_step'] = False
-            user_states[user_id] = "waiting_client_type"
-            msg = (
-                "✅ Спасибо! Теперь выберите тип клиента:\n\n"
-                "1 - Физическое лицо\n"
-                "2 - Юридическое лицо"
-            )
-            await message.message.answer(text=msg)
-        return
-
-    # Отказ
-    if text.lower() in ["нет", "no", "n", "отказ"]:
-        await send_refusal_notification(user_id)
-        user_states[user_id] = None
-        user_data[user_id] = {}
-        msg = (
-            "😔 Мы уважаем ваше решение.\n\n"
-            "☎️ Позвоните нам: 8-495-999-85-89 для бесплатной консультации"
-        )
-        await message.message.answer(text=msg)
-        return
-
-    # Выбор типа клиента
-    if user_states.get(user_id) == "waiting_client_type":
-        if text == "1":
-            user_data[user_id]['client_type'] = "Физическое лицо"
-            user_states[user_id] = "waiting_category_individual"
-            msg = (
-                "Выберите категорию вопроса:\n\n"
-                "1 - ДТП\n"
-                "2 - Семейное право\n"
-                "3 - Недвижимость\n"
-                "4 - Трудовые споры\n"
-                "5 - Другое"
-            )
-            await message.message.answer(text=msg)
-        elif text == "2":
-            user_data[user_id]['client_type'] = "Юридическое лицо"
-            user_states[user_id] = "waiting_category_business"
-            msg = (
-                "Выберите категорию вопроса:\n\n"
-                "1 - Регистрация бизнеса\n"
-                "2 - Договоры и споры\n"
-                "3 - Трудовые вопросы\n"
-                "4 - Налоги и штрафы\n"
-                "5 - Другое"
-            )
-            await message.message.answer(text=msg)
-        return
-
-    # Категория физлица
-    if user_states.get(user_id) == "waiting_category_individual":
-        cat_map = {"1": "ДТП", "2": "Семейное право", "3": "Недвижимость",
-                   "4": "Трудовые споры", "5": "Другое"}
-        if text in cat_map:
-            user_data[user_id]['category'] = cat_map[text]
-            user_states[user_id] = "waiting_name"
-            await message.message.answer(text="Как вас зовут?")
-        return
-
-    # Категория юрлица
-    if user_states.get(user_id) == "waiting_category_business":
-        cat_map = {"1": "Регистрация бизнеса", "2": "Договоры и споры",
-                   "3": "Трудовые вопросы", "4": "Налоги и штрафы", "5": "Другое"}
-        if text in cat_map:
-            user_data[user_id]['category'] = cat_map[text]
-            user_states[user_id] = "waiting_name"
-            await message.message.answer(text="Как вас зовут?")
-        return
-
     # Ожидание имени
-    if user_states.get(user_id) == "waiting_name":
+    if state == "name":
         user_data[user_id]['name'] = text
-        user_states[user_id] = "waiting_phone"
-        await message.message.answer(text="Ваш номер телефона?")
+        user_states[user_id] = "phone"
+        await bot.send_message(chat_id=user_id, text="Ваш номер телефона?")
         return
 
     # Ожидание номера телефона
-    if user_states.get(user_id) == "waiting_phone":
+    if state == "phone":
         if not validate_phone(text):
-            await message.message.answer(
-                text="❌ Пожалуйста, введите корректный номер телефона.\n"
-                     "Примеры: +7 999 123-45-67 или 79991234567"
+            await bot.send_message(
+                chat_id=user_id,
+                text="❌ Пожалуйста, введите корректный номер телефона.\nПримеры: +7 999 123-45-67 или 79991234567"
             )
             return
 
         user_data[user_id]['phone'] = text
-        user_states[user_id] = "waiting_description_choice"
-        msg = (
-            "Кратко опишите ситуацию (необязательно):\n\n"
-            "1 - Написать описание\n"
-            "2 - Пропустить"
+        user_states[user_id] = "description_choice"
+        await send_message_with_buttons(
+            user_id,
+            "Кратко опишите ситуацию (необязательно):",
+            [("✏️ Написать описание", "write_desc"), ("⏭️ Пропустить", "skip_desc")]
         )
-        await message.message.answer(text=msg)
-        return
-
-    # Выбор описания
-    if user_states.get(user_id) == "waiting_description_choice":
-        if text == "1":
-            user_states[user_id] = "waiting_description"
-            await message.message.answer(text="Опишите вашу ситуацию:")
-        elif text == "2":
-            await submit_application(user_id, description=None)
         return
 
     # Ожидание описания
-    if user_states.get(user_id) == "waiting_description":
+    if state == "description":
         await submit_application(user_id, description=text)
         return
 
 
+async def ask_client_type(user_id: str):
+    """Спросить тип клиента после согласия"""
+    user_states[user_id] = "client_type"
+    await send_message_with_buttons(
+        user_id,
+        "✅ Спасибо! Теперь выберите тип клиента:",
+        [("👤 Физическое лицо", "physical"), ("🏢 Юридическое лицо", "legal")]
+    )
+
+
+async def ask_category_individual(user_id: str):
+    """Спросить категорию для физ. лица"""
+    await send_message_with_buttons(
+        user_id,
+        "Выберите категорию вопроса:",
+        [
+            ("🚗 ДТП", "cat_ind_dtp"),
+            ("👨‍👩‍👧 Семейное право", "cat_ind_family"),
+            ("🏠 Недвижимость", "cat_ind_realty"),
+            ("⚖️ Трудовые споры", "cat_ind_work"),
+            ("📋 Другое", "cat_ind_other")
+        ]
+    )
+
+
+async def ask_category_business(user_id: str):
+    """Спросить категорию для юр. лица"""
+    await send_message_with_buttons(
+        user_id,
+        "Выберите категорию вопроса:",
+        [
+            ("📝 Регистрация бизнеса", "cat_bus_reg"),
+            ("📄 Договоры и споры", "cat_bus_contracts"),
+            ("👥 Трудовые вопросы", "cat_bus_hr"),
+            ("💰 Налоги и штрафы", "cat_bus_tax"),
+            ("📋 Другое", "cat_bus_other")
+        ]
+    )
+
+
 @dp.message_callback()
 async def handle_callback(callback: MessageCallback):
-    logger.info(f"📘 Callback от {callback.callback.user.user_id}: {callback.callback.payload}")
+    user_id = str(callback.callback.user.user_id)
+    payload = callback.callback.payload
+    logger.info(f"📘 Callback от {user_id}: {payload}")
+
+    if user_id not in user_data:
+        user_data[user_id] = {
+            'consent_pd': False, 'consent_policy': False, 'in_consent_step': False,
+            'client_type': None, 'category': None, 'name': None, 'phone': None
+        }
+
+    # Главное меню
+    if payload == "record":
+        user_states[user_id] = "consent_step"
+        msg = (
+            f"📋 Чтобы продолжить, подтвердите согласия:\n\n"
+            f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
+            f"📄 Согласие на обработку ПД:\n{AGREEMENT_URL}"
+        )
+        await send_message_with_buttons(
+            user_id,
+            msg,
+            [
+                ("✅ Согласен на обработку ПД", "consent_pd"),
+                ("✅ Ознакомлен с политикой", "consent_policy"),
+                ("❌ Отказать", "refuse")
+            ]
+        )
+    elif payload == "help":
+        await bot.send_message(
+            chat_id=user_id,
+            text="☎️ Позвоните нам: 8-495-999-85-89"
+        )
+
+    # Согласия
+    elif payload == "consent_pd":
+        user_data[user_id]['consent_pd'] = True
+        await bot.send_message(chat_id=user_id, text="✅ Спасибо за согласие на обработку ПД!")
+        # Проверяем, если оба согласия получены
+        if user_data[user_id]['consent_policy']:
+            await ask_client_type(user_id)
+    elif payload == "consent_policy":
+        user_data[user_id]['consent_policy'] = True
+        await bot.send_message(chat_id=user_id, text="✅ Спасибо! Вы ознакомлены с политикой.")
+        # Проверяем, если оба согласия получены
+        if user_data[user_id]['consent_pd']:
+            await ask_client_type(user_id)
+    elif payload == "refuse":
+        await send_refusal_notification(user_id)
+        user_states[user_id] = None
+        user_data[user_id] = {}
+        await bot.send_message(
+            chat_id=user_id,
+            text="😔 Мы уважаем ваше решение.\n\n☎️ Позвоните нам: 8-495-999-85-89"
+        )
+
+    # Выбор типа клиента
+    elif payload == "physical":
+        user_data[user_id]['client_type'] = "Физическое лицо"
+        user_states[user_id] = "category_individual"
+        await ask_category_individual(user_id)
+    elif payload == "legal":
+        user_data[user_id]['client_type'] = "Юридическое лицо"
+        user_states[user_id] = "category_business"
+        await ask_category_business(user_id)
+
+    # Категории физлица
+    elif payload.startswith("cat_ind_"):
+        cat = payload.replace("cat_ind_", "")
+        cats = {
+            "dtp": "ДТП", "family": "Семейное право", "realty": "Недвижимость",
+            "work": "Трудовые споры", "other": "Другое"
+        }
+        user_data[user_id]['category'] = cats.get(cat, cat)
+        user_states[user_id] = "name"
+        await bot.send_message(chat_id=user_id, text="Как вас зовут?")
+
+    # Категории юрлица
+    elif payload.startswith("cat_bus_"):
+        cat = payload.replace("cat_bus_", "")
+        cats = {
+            "reg": "Регистрация бизнеса", "contracts": "Договоры и споры",
+            "hr": "Трудовые вопросы", "tax": "Налоги и штрафы", "other": "Другое"
+        }
+        user_data[user_id]['category'] = cats.get(cat, cat)
+        user_states[user_id] = "name"
+        await bot.send_message(chat_id=user_id, text="Как вас зовут?")
+
+    # Описание ситуации
+    elif payload == "write_desc":
+        user_states[user_id] = "description"
+        await bot.send_message(chat_id=user_id, text="Опишите вашу ситуацию:")
+    elif payload == "skip_desc":
+        await submit_application(user_id, description=None)
+
     await callback.answer_callback()
 
 
