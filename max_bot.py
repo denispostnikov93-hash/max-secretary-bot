@@ -1,12 +1,13 @@
 """
 Max бот-секретарь — приём заявок на консультации
-Использует maxapi с Long Polling
+Использует maxapi с интерактивными кнопками
 """
 import logging
 import re
 from datetime import datetime
 from maxapi import Bot, Dispatcher
-from maxapi.types import Command, MessageCreated, MessageCallback
+from maxapi.types import Command, MessageCreated, MessageCallback, CallbackButton
+from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
 from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID, PRIVACY_POLICY_URL, AGREEMENT_URL
 from database import db
@@ -26,6 +27,13 @@ user_states = {}
 
 logger.info(f"🔐 MAX_BOT_TOKEN установлен: {bool(MAX_BOT_TOKEN)}")
 logger.info(f"👤 MAX_ADMIN_USER_ID: {admin_id}")
+
+
+def make_keyboard(*buttons):
+    """Создать InlineKeyboard из кортежей (text, payload)"""
+    kb = InlineKeyboardBuilder()
+    kb.row(*[CallbackButton(text=text, payload=payload) for text, payload in buttons])
+    return [kb.as_markup()]
 
 
 def validate_phone(phone: str) -> bool:
@@ -58,15 +66,12 @@ async def handle_start(message: MessageCreated):
     }
     user_states[user_id] = "menu"
 
-    text = (
-        "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\n"
-        "Мы поможем защитить ваши права.\n\n"
-        "Выберите:\n"
-        "1️⃣ Записаться на консультацию\n"
-        "2️⃣ Позвонить нам"
-    )
+    text = "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права."
 
-    await message.message.answer(text=text)
+    await message.message.answer(
+        text=text,
+        attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
+    )
     logger.info(f"📨 /start от {user_id}")
 
 
@@ -75,6 +80,126 @@ async def handle_my_id(message: MessageCreated):
     user_id = message.message.sender.user_id
     await message.message.answer(text=f"ℹ️ Ваш Max ID: `{user_id}`")
     logger.info(f"📨 /my_id от {user_id}")
+
+
+@dp.message_callback()
+async def handle_callback(callback: MessageCallback):
+    user_id = str(callback.callback.user.user_id)
+    payload = callback.callback.payload
+    logger.info(f"📘 Callback от {user_id}: {payload}")
+
+    if user_id not in user_data:
+        user_data[user_id] = {
+            'consent_pd': False, 'consent_policy': False,
+            'client_type': None, 'category': None, 'name': None, 'phone': None
+        }
+
+    # Главное меню
+    if payload == "record":
+        user_states[user_id] = "consent"
+        msg = (
+            f"📋 Подтвердите два согласия:\n\n"
+            f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
+            f"📄 Согласие на обработку ПД:\n{AGREEMENT_URL}"
+        )
+        await callback.message.answer(
+            text=msg,
+            attachments=make_keyboard(
+                ("✅ Согласен на обработку ПД", "consent_pd"),
+                ("✅ Ознакомлен с политикой", "consent_policy"),
+                ("❌ Отказать", "refuse")
+            )
+        )
+    elif payload == "help":
+        await callback.message.answer(text="☎️ Позвоните нам: 8-495-999-85-89")
+
+    # Согласия
+    elif payload == "consent_pd":
+        user_data[user_id]['consent_pd'] = True
+        await callback.message.answer(text="✅ Согласие на обработку ПД получено!")
+        if user_data[user_id]['consent_policy']:
+            await ask_client_type(callback.message, user_id)
+    elif payload == "consent_policy":
+        user_data[user_id]['consent_policy'] = True
+        await callback.message.answer(text="✅ Вы ознакомлены с политикой!")
+        if user_data[user_id]['consent_pd']:
+            await ask_client_type(callback.message, user_id)
+    elif payload == "refuse":
+        await send_refusal_notification(user_id)
+        user_states[user_id] = None
+        user_data[user_id] = {}
+        await callback.message.answer(text="😔 Мы уважаем ваше решение.\n\n☎️ Позвоните нам: 8-495-999-85-89")
+
+    # Выбор типа клиента
+    elif payload == "physical":
+        user_data[user_id]['client_type'] = "Физическое лицо"
+        user_states[user_id] = "category_individual"
+        await callback.message.answer(
+            text="Выберите категорию вопроса:",
+            attachments=make_keyboard(
+                ("🚗 ДТП", "cat_ind_dtp"),
+                ("👨‍👩‍👧 Семейное право", "cat_ind_family"),
+                ("🏠 Недвижимость", "cat_ind_realty"),
+                ("⚖️ Трудовые споры", "cat_ind_work"),
+                ("📋 Другое", "cat_ind_other")
+            )
+        )
+    elif payload == "legal":
+        user_data[user_id]['client_type'] = "Юридическое лицо"
+        user_states[user_id] = "category_business"
+        await callback.message.answer(
+            text="Выберите категорию вопроса:",
+            attachments=make_keyboard(
+                ("📝 Регистрация бизнеса", "cat_bus_reg"),
+                ("📄 Договоры и споры", "cat_bus_contracts"),
+                ("👥 Трудовые вопросы", "cat_bus_hr"),
+                ("💰 Налоги и штрафы", "cat_bus_tax"),
+                ("📋 Другое", "cat_bus_other")
+            )
+        )
+
+    # Категории физлица
+    elif payload.startswith("cat_ind_"):
+        cat = payload.replace("cat_ind_", "")
+        cats = {
+            "dtp": "ДТП", "family": "Семейное право", "realty": "Недвижимость",
+            "work": "Трудовые споры", "other": "Другое"
+        }
+        user_data[user_id]['category'] = cats.get(cat, cat)
+        user_states[user_id] = "name"
+        await callback.message.answer(text="Как вас зовут?")
+
+    # Категории юрлица
+    elif payload.startswith("cat_bus_"):
+        cat = payload.replace("cat_bus_", "")
+        cats = {
+            "reg": "Регистрация бизнеса", "contracts": "Договоры и споры",
+            "hr": "Трудовые вопросы", "tax": "Налоги и штрафы", "other": "Другое"
+        }
+        user_data[user_id]['category'] = cats.get(cat, cat)
+        user_states[user_id] = "name"
+        await callback.message.answer(text="Как вас зовут?")
+
+    # Описание ситуации
+    elif payload == "write_desc":
+        user_states[user_id] = "description"
+        await callback.message.answer(text="Опишите вашу ситуацию:")
+    elif payload == "skip_desc":
+        await submit_application(user_id, description=None)
+
+    await callback.answer_callback()
+
+
+async def ask_client_type(message, user_id: str):
+    """Спросить тип клиента после согласия"""
+    user_states[user_id] = "client_type"
+    await message.answer(
+        text="✅ Спасибо! Теперь выберите тип клиента:",
+        attachments=make_keyboard(
+            ("👤 Физическое лицо", "physical"),
+            ("🏢 Юридическое лицо", "legal")
+        )
+    )
 
 
 @dp.message_created()
@@ -95,93 +220,6 @@ async def handle_message(message: MessageCreated):
             'client_type': None, 'category': None, 'name': None, 'phone': None
         }
 
-    # Главное меню
-    if state == "menu":
-        if text == "1":
-            user_states[user_id] = "consent"
-            msg = (
-                f"📋 Подтвердите два согласия:\n\n"
-                f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
-                f"📄 Согласие на обработку ПД:\n{AGREEMENT_URL}\n\n"
-                f"Ответьте:\n"
-                f"1️⃣ Согласен на обработку ПД\n"
-                f"2️⃣ Ознакомлен с политикой\n"
-                f"3️⃣ Отказать"
-            )
-            await message.message.answer(text=msg)
-        elif text == "2":
-            await message.message.answer(text="☎️ Позвоните нам: 8-495-999-85-89")
-        return
-
-    # Согласия (первое и второе)
-    if state == "consent":
-        if text == "1":
-            user_data[user_id]['consent_pd'] = True
-            await message.message.answer(text="✅ Спасибо! Согласие на обработку ПД получено.")
-            if user_data[user_id]['consent_policy']:
-                await ask_client_type(user_id)
-        elif text == "2":
-            user_data[user_id]['consent_policy'] = True
-            await message.message.answer(text="✅ Спасибо! Вы ознакомлены с политикой.")
-            if user_data[user_id]['consent_pd']:
-                await ask_client_type(user_id)
-        elif text == "3":
-            await send_refusal_notification(user_id)
-            user_states[user_id] = None
-            user_data[user_id] = {}
-            await message.message.answer(
-                text="😔 Мы уважаем ваше решение.\n\n☎️ Позвоните нам: 8-495-999-85-89"
-            )
-        return
-
-    # Выбор типа клиента
-    if state == "client_type":
-        if text == "1":
-            user_data[user_id]['client_type'] = "Физическое лицо"
-            user_states[user_id] = "category_individual"
-            msg = (
-                "Выберите категорию вопроса:\n\n"
-                "1️⃣ ДТП\n"
-                "2️⃣ Семейное право\n"
-                "3️⃣ Недвижимость\n"
-                "4️⃣ Трудовые споры\n"
-                "5️⃣ Другое"
-            )
-            await message.message.answer(text=msg)
-        elif text == "2":
-            user_data[user_id]['client_type'] = "Юридическое лицо"
-            user_states[user_id] = "category_business"
-            msg = (
-                "Выберите категорию вопроса:\n\n"
-                "1️⃣ Регистрация бизнеса\n"
-                "2️⃣ Договоры и споры\n"
-                "3️⃣ Трудовые вопросы\n"
-                "4️⃣ Налоги и штрафы\n"
-                "5️⃣ Другое"
-            )
-            await message.message.answer(text=msg)
-        return
-
-    # Категория физлица
-    if state == "category_individual":
-        cat_map = {"1": "ДТП", "2": "Семейное право", "3": "Недвижимость",
-                   "4": "Трудовые споры", "5": "Другое"}
-        if text in cat_map:
-            user_data[user_id]['category'] = cat_map[text]
-            user_states[user_id] = "name"
-            await message.message.answer(text="Как вас зовут?")
-        return
-
-    # Категория юрлица
-    if state == "category_business":
-        cat_map = {"1": "Регистрация бизнеса", "2": "Договоры и споры",
-                   "3": "Трудовые вопросы", "4": "Налоги и штрафы", "5": "Другое"}
-        if text in cat_map:
-            user_data[user_id]['category'] = cat_map[text]
-            user_states[user_id] = "name"
-            await message.message.answer(text="Как вас зовут?")
-        return
-
     # Ожидание имени
     if state == "name":
         user_data[user_id]['name'] = text
@@ -199,44 +237,19 @@ async def handle_message(message: MessageCreated):
 
         user_data[user_id]['phone'] = text
         user_states[user_id] = "description_choice"
-        msg = (
-            "Кратко опишите ситуацию (необязательно):\n\n"
-            "1️⃣ Написать описание\n"
-            "2️⃣ Пропустить"
+        await message.message.answer(
+            text="Кратко опишите ситуацию (необязательно):",
+            attachments=make_keyboard(
+                ("✏️ Написать описание", "write_desc"),
+                ("⏭️ Пропустить", "skip_desc")
+            )
         )
-        await message.message.answer(text=msg)
-        return
-
-    # Выбор описания
-    if state == "description_choice":
-        if text == "1":
-            user_states[user_id] = "description"
-            await message.message.answer(text="Опишите вашу ситуацию:")
-        elif text == "2":
-            await submit_application(user_id, description=None)
         return
 
     # Ожидание описания
     if state == "description":
         await submit_application(user_id, description=text)
         return
-
-
-async def ask_client_type(user_id: str):
-    """Спросить тип клиента после согласия"""
-    user_states[user_id] = "client_type"
-    msg = (
-        "✅ Спасибо! Теперь выберите тип клиента:\n\n"
-        "1️⃣ Физическое лицо\n"
-        "2️⃣ Юридическое лицо"
-    )
-    await bot.send_message(chat_id=user_id, text=msg)
-
-
-@dp.message_callback()
-async def handle_callback(callback: MessageCallback):
-    logger.info(f"📘 Callback от {callback.callback.user.user_id}: {callback.callback.payload}")
-    await callback.answer_callback()
 
 
 async def send_refusal_notification(user_id: str):
@@ -307,13 +320,13 @@ async def submit_application(user_id: str, description=None):
 
 async def start_polling():
     """Запустить long polling"""
-    logger.info("🚀 Запускаю Max бота (Long Polling)...")
+    logger.info("🚀 Запускаю Max бота...")
     logger.info("=" * 60)
     try:
         await dp.start_polling(bot)
     except KeyboardInterrupt:
         logger.info("⏹️ Бот остановлен")
     except Exception as e:
-        logger.error(f"❌ Ошибка polling: {e}")
+        logger.error(f"❌ Ошибка: {e}")
         import traceback
         logger.error(traceback.format_exc())
