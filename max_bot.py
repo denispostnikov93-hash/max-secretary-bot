@@ -216,28 +216,6 @@ async def handle_my_id(message: MessageCreated):
 
 
 @dp.message_created()
-async def handle_any_message(message: MessageCreated):
-    """Обработчик для любого сообщения - включает bot_started (кнопка 'начать') и текст"""
-    user_id = str(message.message.sender.user_id)
-    text = message.message.body.text if message.message.body and hasattr(message.message.body, 'text') else ""
-    text = text.strip() if text else ""
-
-    logger.info(f"🔍 message_created от {user_id}: text='{text[:20]}'")
-
-    # Игнорируем команды (уже обработаны выше)
-    if text.startswith('/'):
-        return
-
-    # Если пользователь уже в процессе - обработаем как обычное сообщение
-    if user_id in user_states and user_states[user_id] != "menu":
-        return
-
-    # Первое сообщение (пустое при bot_started или любой текст) - показываем приветствие
-    if user_id not in user_data:
-        logger.info(f"🟢 Первый контакт от {user_id} (может быть bot_started или текст)")
-        await send_start_message(user_id)
-
-
 @dp.message_callback()
 async def handle_callback(callback: MessageCallback):
     user_id = str(callback.callback.user.user_id)
@@ -362,11 +340,11 @@ async def ask_client_type(message, user_id: str):
 async def handle_message(message: MessageCreated):
     user_id = str(message.message.sender.user_id)
     text = message.message.body.text if message.message.body and hasattr(message.message.body, 'text') else ""
+    text = text.strip() if text else ""
 
-    if not text or text.startswith('/'):
+    if text.startswith('/'):
         return
 
-    text = text.strip()
     state = user_states.get(user_id)
     logger.info(f"📨 {user_id} (state={state}): {text[:50]}")
 
@@ -375,6 +353,10 @@ async def handle_message(message: MessageCreated):
             'consent_pd': False, 'consent_policy': False,
             'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
         }
+        # Первый контакт - показываем приветствие
+        logger.info(f"🟢 Первый контакт от {user_id}")
+        await send_start_message(user_id)
+        return
 
     # Категория и описание ситуации
     if state == "category_and_desc":
