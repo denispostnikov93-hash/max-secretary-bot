@@ -225,29 +225,49 @@ async def register_startup_handlers():
         if hasattr(dp, 'bot_started'):
             logger.info("📝 dp.bot_started существует, попытка регистрации...")
             async def on_bot_started(event):
-                logger.info(f"   bot_started event type: {type(event)}")
-                logger.info(f"   bot_started event attrs: {[attr for attr in dir(event) if not attr.startswith('_')]}")
-                logger.info(f"   bot_started event repr: {repr(event)}")
-                # Пробуем разные варианты получения user_id
+                logger.info(f"🔵 bot_started событие получено!")
+                logger.info(f"   Тип: {type(event)}")
+                logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+
                 user_id = None
-                if hasattr(event, 'user_id'):
+                # Метод 1: прямой атрибут
+                try:
                     user_id = str(event.user_id)
-                    logger.info(f"   ✓ Нашли user_id через event.user_id")
-                elif hasattr(event, 'user') and hasattr(event.user, 'user_id'):
-                    user_id = str(event.user.user_id)
-                    logger.info(f"   ✓ Нашли user_id через event.user.user_id")
-                elif hasattr(event, 'sender') and hasattr(event.sender, 'user_id'):
-                    user_id = str(event.sender.user_id)
-                    logger.info(f"   ✓ Нашли user_id через event.sender.user_id")
-                elif hasattr(event, 'sender_id'):
-                    user_id = str(event.sender_id)
-                    logger.info(f"   ✓ Нашли user_id через event.sender_id")
+                    logger.info(f"   ✓ user_id через event.user_id: {user_id}")
+                except AttributeError:
+                    logger.info(f"   ✗ event.user_id не существует")
+
+                # Метод 2: user.user_id (как в callbacks)
+                if not user_id:
+                    try:
+                        user_id = str(event.user.user_id)
+                        logger.info(f"   ✓ user_id через event.user.user_id: {user_id}")
+                    except AttributeError:
+                        logger.info(f"   ✗ event.user.user_id не существует")
+
+                # Метод 3: sender.user_id (как в messages)
+                if not user_id:
+                    try:
+                        user_id = str(event.sender.user_id)
+                        logger.info(f"   ✓ user_id через event.sender.user_id: {user_id}")
+                    except AttributeError:
+                        logger.info(f"   ✗ event.sender.user_id не существует")
+
+                # Метод 4: sender_id
+                if not user_id:
+                    try:
+                        user_id = str(event.sender_id)
+                        logger.info(f"   ✓ user_id через event.sender_id: {user_id}")
+                    except AttributeError:
+                        logger.info(f"   ✗ event.sender_id не существует")
+
+                # Метод 5: печатаем весь объект если ничего не сработало
+                if not user_id:
+                    logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
 
                 if user_id:
-                    logger.info(f"✅ bot_started перехвачен: {user_id}")
+                    logger.info(f"✅ bot_started перехвачен от {user_id}")
                     await handle_startup_event(user_id)
-                else:
-                    logger.warning(f"⚠️ Не смог получить user_id из bot_started события")
             dp.bot_started.register(on_bot_started)
             logger.info("✓ bot_started успешно зарегистрирован")
         else:
@@ -256,29 +276,49 @@ async def register_startup_handlers():
         if hasattr(dp, 'dialog_cleared'):
             logger.info("📝 dp.dialog_cleared существует, попытка регистрации...")
             async def on_dialog_cleared(event):
-                logger.info(f"   dialog_cleared event type: {type(event)}")
-                logger.info(f"   dialog_cleared event attrs: {[attr for attr in dir(event) if not attr.startswith('_')]}")
-                logger.info(f"   dialog_cleared event repr: {repr(event)}")
-                # Пробуем разные варианты получения user_id
+                logger.info(f"🟠 dialog_cleared событие получено!")
+                logger.info(f"   Тип: {type(event)}")
+                logger.info(f"   Атрибуты: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+
                 user_id = None
-                if hasattr(event, 'user_id'):
+                # Метод 1: прямой атрибут
+                try:
                     user_id = str(event.user_id)
-                    logger.info(f"   ✓ Нашли user_id через event.user_id")
-                elif hasattr(event, 'user') and hasattr(event.user, 'user_id'):
-                    user_id = str(event.user.user_id)
-                    logger.info(f"   ✓ Нашли user_id через event.user.user_id")
-                elif hasattr(event, 'sender') and hasattr(event.sender, 'user_id'):
-                    user_id = str(event.sender.user_id)
-                    logger.info(f"   ✓ Нашли user_id через event.sender.user_id")
-                elif hasattr(event, 'sender_id'):
-                    user_id = str(event.sender_id)
-                    logger.info(f"   ✓ Нашли user_id через event.sender_id")
+                    logger.info(f"   ✓ user_id через event.user_id: {user_id}")
+                except AttributeError:
+                    logger.info(f"   ✗ event.user_id не существует")
+
+                # Метод 2: user.user_id (как в callbacks)
+                if not user_id:
+                    try:
+                        user_id = str(event.user.user_id)
+                        logger.info(f"   ✓ user_id через event.user.user_id: {user_id}")
+                    except AttributeError:
+                        logger.info(f"   ✗ event.user.user_id не существует")
+
+                # Метод 3: sender.user_id (как в messages)
+                if not user_id:
+                    try:
+                        user_id = str(event.sender.user_id)
+                        logger.info(f"   ✓ user_id через event.sender.user_id: {user_id}")
+                    except AttributeError:
+                        logger.info(f"   ✗ event.sender.user_id не существует")
+
+                # Метод 4: sender_id
+                if not user_id:
+                    try:
+                        user_id = str(event.sender_id)
+                        logger.info(f"   ✓ user_id через event.sender_id: {user_id}")
+                    except AttributeError:
+                        logger.info(f"   ✗ event.sender_id не существует")
+
+                # Метод 5: печатаем весь объект если ничего не сработало
+                if not user_id:
+                    logger.warning(f"⚠️ Не смог найти user_id! Объект: {event}")
 
                 if user_id:
-                    logger.info(f"✅ dialog_cleared перехвачен: {user_id}")
+                    logger.info(f"✅ dialog_cleared перехвачен от {user_id}")
                     await handle_startup_event(user_id)
-                else:
-                    logger.warning(f"⚠️ Не смог получить user_id из dialog_cleared события")
             dp.dialog_cleared.register(on_dialog_cleared)
             logger.info("✓ dialog_cleared успешно зарегистрирован")
         else:
