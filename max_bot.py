@@ -159,6 +159,7 @@ async def handle_any_message(message: MessageCreated):
     """Обработчик для любого текста - инициирует процесс если это первое сообщение"""
     user_id = str(message.message.sender.user_id)
     text = message.message.body.text if message.message.body and hasattr(message.message.body, 'text') else ""
+    text = text.strip() if text else ""
 
     # Игнорируем команды (уже обработаны выше)
     if text.startswith('/'):
@@ -168,9 +169,9 @@ async def handle_any_message(message: MessageCreated):
     if user_id in user_states and user_states[user_id] != "menu":
         return
 
-    # Первое сообщение или в главном меню - показываем стартовое сообщение
+    # Первое сообщение (даже пустое) или в главном меню - показываем стартовое сообщение
     if user_id not in user_data:
-        logger.info(f"📨 Первое сообщение от {user_id}: {text[:30]}")
+        logger.info(f"📨 Первое сообщение от {user_id}: '{text[:30]}'")
         user_data[user_id] = {
             'consent_pd': False, 'consent_policy': False,
             'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
@@ -181,6 +182,7 @@ async def handle_any_message(message: MessageCreated):
             text="👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права.",
             attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
         )
+        logger.info(f"✓ Стартовое сообщение отправлено {user_id}")
 
 
 @dp.message_callback()
