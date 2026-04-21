@@ -212,22 +212,30 @@ async def handle_startup_event(user_id: str):
         logger.error(traceback.format_exc())
 
 
-# Универсальный обработчик всех обновлений
-@dp.update()
-async def handle_any_update(update):
-    """Ловим все события включая bot_started и dialog_cleared"""
+# Попытаемся вручную зарегистрировать обработчик для startup событий
+async def register_startup_handlers():
+    """Регистрируем обработчики для bot_started и dialog_cleared"""
     try:
-        # Проверяем тип события
-        if hasattr(update, 'bot_started') and update.bot_started:
-            user_id = str(update.bot_started.user_id)
-            logger.info(f"📌 Поймано событие bot_started от {user_id}")
-            await handle_startup_event(user_id)
-        elif hasattr(update, 'dialog_cleared') and update.dialog_cleared:
-            user_id = str(update.dialog_cleared.user_id)
-            logger.info(f"📌 Поймано событие dialog_cleared от {user_id}")
-            await handle_startup_event(user_id)
+        # Пробуем разные способы регистрации
+        if hasattr(dp, 'bot_started'):
+            logger.info("📝 Попытка зарегистрировать bot_started...")
+            async def on_bot_started(event):
+                user_id = str(event.user_id)
+                logger.info(f"✅ bot_started перехвачен: {user_id}")
+                await handle_startup_event(user_id)
+            dp.bot_started.register(on_bot_started)
+            logger.info("✓ bot_started зарегистрирован")
+
+        if hasattr(dp, 'dialog_cleared'):
+            logger.info("📝 Попытка зарегистрировать dialog_cleared...")
+            async def on_dialog_cleared(event):
+                user_id = str(event.user_id)
+                logger.info(f"✅ dialog_cleared перехвачен: {user_id}")
+                await handle_startup_event(user_id)
+            dp.dialog_cleared.register(on_dialog_cleared)
+            logger.info("✓ dialog_cleared зарегистрирован")
     except Exception as e:
-        logger.warning(f"⚠️ handle_any_update: {type(e).__name__}: {e}")
+        logger.warning(f"⚠️ Не удалось зарегистрировать startup handlers: {type(e).__name__}: {e}")
 
 
 @dp.message_callback()
@@ -503,6 +511,9 @@ async def start_polling():
 
     # Регистрируем команды бота
     await setup_bot_commands()
+
+    # Регистрируем обработчики для startup событий
+    await register_startup_handlers()
 
     try:
         await dp.start_polling(bot)
