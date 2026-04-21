@@ -44,6 +44,39 @@ def validate_phone(phone: str) -> bool:
     )
 
 
+def parse_category_and_description(text: str, client_type: str) -> tuple:
+    """Распознать категорию из текста и вернуть (категория, описание)"""
+    text_lower = text.lower()
+
+    if client_type == "Физическое лицо":
+        categories = {
+            "ДТП": ["дтп", "авария", "автомобиль"],
+            "Семейное право": ["семейн", "развод", "алимент", "опека", "ребен"],
+            "Недвижимость": ["недвижимость", "квартира", "дом", "имущество", "жилищ"],
+            "Трудовые споры": ["трудов", "работ", "сотрудник", "уволен", "зарплат"],
+            "Другое": []
+        }
+    else:  # Юридическое лицо
+        categories = {
+            "Регистрация бизнеса": ["регистр", "ооо", "ип", "компани", "бизнес"],
+            "Договоры и споры": ["договор", "спор", "контракт", "исск", "претензи"],
+            "Трудовые вопросы": ["кадр", "сотрудник", "персонал", "найм", "трудов"],
+            "Налоги и штрафы": ["налог", "штраф", "ндс", "декларац", "проверк"],
+            "Другое": []
+        }
+
+    # Ищем совпадение по ключевым словам
+    for cat, keywords in categories.items():
+        if cat == "Другое":
+            continue
+        for keyword in keywords:
+            if keyword in text_lower:
+                return cat, text
+
+    # Если не нашли, возвращаем "Другое"
+    return "Другое", text
+
+
 async def send_admin_message(text: str):
     """Отправить сообщение админу"""
     try:
@@ -62,7 +95,7 @@ async def handle_start(message: MessageCreated):
     user_id = str(message.message.sender.user_id)
     user_data[user_id] = {
         'consent_pd': False, 'consent_policy': False,
-        'client_type': None, 'category': None, 'name': None, 'phone': None
+        'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
     }
     user_states[user_id] = "menu"
 
@@ -91,7 +124,7 @@ async def handle_callback(callback: MessageCallback):
     if user_id not in user_data:
         user_data[user_id] = {
             'consent_pd': False, 'consent_policy': False,
-            'client_type': None, 'category': None, 'name': None, 'phone': None
+            'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
         }
 
     # Главное меню
@@ -125,67 +158,68 @@ async def handle_callback(callback: MessageCallback):
         if user_data[user_id]['consent_pd']:
             await ask_client_type(callback.message, user_id)
     elif payload == "refuse":
-        await send_refusal_notification(user_id)
-        user_states[user_id] = None
-        user_data[user_id] = {}
-        await callback.message.answer(text="😔 Мы уважаем ваше решение.\n\n☎️ Позвоните нам: 8-495-999-85-89")
+        user_states[user_id] = "consent_retry"
+        await callback.message.answer(
+            text=(
+                "😔 Мы уважаем ваше решение.\n\n"
+                "Однако по закону мы не можем продолжить прием заявки в данном формате без согласия на обработку персональных данных.\n\n"
+                "Это не означает, что мы не можем помочь вам! Есть несколько вариантов:\n\n"
+                "☎️ Позвоните нам: 8-495-999-85-89\n\n"
+                "Или дайте согласие и оставьте заявку через этот формат:"
+            ),
+            attachments=make_keyboard(("✅ Дать согласие и оставить заявку", "back_consent"))
+        )
+    elif payload == "back_consent":
+        user_data[user_id] = {
+            'consent_pd': False, 'consent_policy': False,
+            'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
+        }
+        user_states[user_id] = "consent"
+        msg = (
+            f"📋 Подтвердите два согласия:\n\n"
+            f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
+            f"📄 Согласие на обработку ПД:\n{AGREEMENT_URL}"
+        )
+        await callback.message.answer(
+            text=msg,
+            attachments=make_keyboard(
+                ("✅ Согласен на обработку ПД", "consent_pd"),
+                ("✅ Ознакомлен с политикой", "consent_policy"),
+                ("❌ Отказать", "refuse")
+            )
+        )
 
     # Выбор типа клиента
     elif payload == "physical":
         user_data[user_id]['client_type'] = "Физическое лицо"
-        user_states[user_id] = "category_individual"
+        user_states[user_id] = "category_and_desc"
         await callback.message.answer(
-            text="Выберите категорию вопроса:",
-            attachments=make_keyboard(
-                ("🚗 ДТП", "cat_ind_dtp"),
-                ("👨‍👩‍👧 Семейное право", "cat_ind_family"),
-                ("🏠 Недвижимость", "cat_ind_realty"),
-                ("⚖️ Трудовые споры", "cat_ind_work"),
-                ("📋 Другое", "cat_ind_other")
+            text=(
+                "Напишите категорию вопроса и кратко опишите ситуацию:\n\n"
+                "Категории для физических лиц:\n"
+                "• ДТП\n"
+                "• Семейное право\n"
+                "• Недвижимость\n"
+                "• Трудовые споры\n"
+                "• Другое\n\n"
+                "Пример: \"ДТП. Со мной произошло ДТП на перекрёстке\""
             )
         )
     elif payload == "legal":
         user_data[user_id]['client_type'] = "Юридическое лицо"
-        user_states[user_id] = "category_business"
+        user_states[user_id] = "category_and_desc"
         await callback.message.answer(
-            text="Выберите категорию вопроса:",
-            attachments=make_keyboard(
-                ("📝 Регистрация бизнеса", "cat_bus_reg"),
-                ("📄 Договоры и споры", "cat_bus_contracts"),
-                ("👥 Трудовые вопросы", "cat_bus_hr"),
-                ("💰 Налоги и штрафы", "cat_bus_tax"),
-                ("📋 Другое", "cat_bus_other")
+            text=(
+                "Напишите категорию вопроса и кратко опишите ситуацию:\n\n"
+                "Категории для юридических лиц:\n"
+                "• Регистрация бизнеса\n"
+                "• Договоры и споры\n"
+                "• Трудовые вопросы\n"
+                "• Налоги и штрафы\n"
+                "• Другое\n\n"
+                "Пример: \"Регистрация бизнеса. Нужно помочь с регистрацией ООО\""
             )
         )
-
-    # Категории физлица
-    elif payload.startswith("cat_ind_"):
-        cat = payload.replace("cat_ind_", "")
-        cats = {
-            "dtp": "ДТП", "family": "Семейное право", "realty": "Недвижимость",
-            "work": "Трудовые споры", "other": "Другое"
-        }
-        user_data[user_id]['category'] = cats.get(cat, cat)
-        user_states[user_id] = "name"
-        await callback.message.answer(text="Как вас зовут?")
-
-    # Категории юрлица
-    elif payload.startswith("cat_bus_"):
-        cat = payload.replace("cat_bus_", "")
-        cats = {
-            "reg": "Регистрация бизнеса", "contracts": "Договоры и споры",
-            "hr": "Трудовые вопросы", "tax": "Налоги и штрафы", "other": "Другое"
-        }
-        user_data[user_id]['category'] = cats.get(cat, cat)
-        user_states[user_id] = "name"
-        await callback.message.answer(text="Как вас зовут?")
-
-    # Описание ситуации
-    elif payload == "write_desc":
-        user_states[user_id] = "description"
-        await callback.message.answer(text="Опишите вашу ситуацию:")
-    elif payload == "skip_desc":
-        await submit_application(user_id, description=None)
 
     await callback.answer_callback()
 
@@ -217,8 +251,17 @@ async def handle_message(message: MessageCreated):
     if user_id not in user_data:
         user_data[user_id] = {
             'consent_pd': False, 'consent_policy': False,
-            'client_type': None, 'category': None, 'name': None, 'phone': None
+            'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
         }
+
+    # Категория и описание ситуации
+    if state == "category_and_desc":
+        category, description = parse_category_and_description(text, user_data[user_id]['client_type'])
+        user_data[user_id]['category'] = category
+        user_data[user_id]['description'] = description
+        user_states[user_id] = "name"
+        await message.message.answer(text="Как вас зовут?")
+        return
 
     # Ожидание имени
     if state == "name":
@@ -236,48 +279,18 @@ async def handle_message(message: MessageCreated):
             return
 
         user_data[user_id]['phone'] = text
-        user_states[user_id] = "description_choice"
-        await message.message.answer(
-            text="Кратко опишите ситуацию (необязательно):",
-            attachments=make_keyboard(
-                ("✏️ Написать описание", "write_desc"),
-                ("⏭️ Пропустить", "skip_desc")
-            )
-        )
-        return
-
-    # Ожидание описания
-    if state == "description":
-        await submit_application(user_id, description=text)
+        await submit_application(user_id)
         return
 
 
-async def send_refusal_notification(user_id: str):
-    try:
-        phone = user_data.get(user_id, {}).get('phone', 'Не указан')
-        message = (
-            f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
-            f"{'━' * 30}\n"
-            f"Пользователь отказал в согласии\n"
-            f"👤 User ID: {user_id}\n"
-            f"📱 Телефон: {phone}\n"
-            f"📲 Источник: Max\n"
-            f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
-            f"{'━' * 30}"
-        )
-        await send_admin_message(message)
-    except Exception as e:
-        logger.error(f"✗ Ошибка отправки уведомления: {e}")
-
-
-async def submit_application(user_id: str, description=None):
+async def submit_application(user_id: str):
     data = user_data[user_id]
     name = data.get('name', 'Неизвестно')
 
     try:
         await db.save_application(
             name=data['name'], phone=data['phone'], client_type=data['client_type'],
-            category=data['category'], description=description, source="Max",
+            category=data['category'], description=data['description'], source="Max",
             consent_pd=data['consent_pd'], consent_policy=data['consent_policy']
         )
         logger.info(f"✓ Заявка {name} сохранена")
@@ -298,8 +311,8 @@ async def submit_application(user_id: str, description=None):
             f"🏷️ Тип: {data['client_type']}\n"
             f"📂 Категория: {data['category']}\n"
         )
-        if description:
-            message += f"💬 Суть: {description}\n"
+        if data['description']:
+            message += f"💬 Описание: {data['description']}\n"
         message += (
             f"\n✅ Согласия:\n"
             f"  • Обработка ПД: {'✅ Да' if data['consent_pd'] else '❌ Нет'}\n"
