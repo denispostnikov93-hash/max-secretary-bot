@@ -506,7 +506,3 @@ async def start_polling():
         logger.error(f"❌ Ошибка: {e}")
         import traceback
         logger.error(traceback.format_exc())
-# Rebuild 1776776010
-# v7.0
-# Version: v7.1 - Universal event handler
-# v7.2 deployed
