@@ -476,19 +476,8 @@ async def submit_application(user_id: str, message: MessageCreated):
         del user_data[user_id]
 
 
-# ===== РЕГИСТРАЦИЯ STARTUP СОБЫТИЙ (после определения всех функций) =====
-
-try:
-    dp.bot_started.register(handle_startup_events)
-    logger.info("✓ Зарегистрирован обработчик bot_started")
-except Exception as e:
-    logger.warning(f"⚠️ Не удалось зарегистрировать bot_started: {e}")
-
-try:
-    dp.dialog_cleared.register(handle_startup_events)
-    logger.info("✓ Зарегистрирован обработчик dialog_cleared")
-except Exception as e:
-    logger.warning(f"⚠️ Не удалось зарегистрировать dialog_cleared: {e}")
+# ВАЖНО: .register() не работает в maxapi, startup события обрабатываются через сообщения
+# Когда пользователь нажимает "Начать" или пишет /start, это приходит как обычное сообщение
 
 
 async def start_polling():
