@@ -158,6 +158,7 @@ async def handle_callback(callback: MessageCallback):
         if user_data[user_id]['consent_pd']:
             await ask_client_type(callback.message, user_id)
     elif payload == "refuse":
+        await send_refusal_notification(user_id)
         user_states[user_id] = "consent_retry"
         await callback.message.answer(
             text=(
@@ -279,11 +280,30 @@ async def handle_message(message: MessageCreated):
             return
 
         user_data[user_id]['phone'] = text
-        await submit_application(user_id)
+        await submit_application(user_id, message)
         return
 
 
-async def submit_application(user_id: str):
+async def send_refusal_notification(user_id: str):
+    """Отправить админу уведомление об отказе пользователя"""
+    try:
+        phone = user_data.get(user_id, {}).get('phone', 'Не указан')
+        message = (
+            f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
+            f"{'━' * 40}\n"
+            f"Пользователь отказал в согласии на обработку ПД\n"
+            f"👤 User ID: {user_id}\n"
+            f"📱 Телефон: {phone}\n"
+            f"📲 Источник: Max\n"
+            f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+            f"{'━' * 40}"
+        )
+        await send_admin_message(message)
+    except Exception as e:
+        logger.error(f"✗ Ошибка отправки уведомления об отказе: {e}")
+
+
+async def submit_application(user_id: str, message: MessageCreated):
     data = user_data[user_id]
     name = data.get('name', 'Неизвестно')
 
@@ -297,8 +317,7 @@ async def submit_application(user_id: str):
     except Exception as e:
         logger.error(f"✗ Ошибка сохранения заявки: {e}")
 
-    await bot.send_message(
-        chat_id=user_id,
+    await message.message.answer(
         text=f"✅ Спасибо, {name}! Заявка принята.\nНаш специалист свяжется с вами в ближайшее время."
     )
 
