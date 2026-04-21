@@ -36,6 +36,22 @@ def make_keyboard(*buttons):
     return [kb.as_markup()]
 
 
+async def get_user_phone(user_id: str) -> str:
+    """Получить номер телефона пользователя из профиля Max"""
+    try:
+        # Пытаемся получить информацию о пользователе
+        user_info = await bot.get_user(user_id=int(user_id))
+        if hasattr(user_info, 'phone') and user_info.phone:
+            logger.info(f"✓ Получен телефон из профиля: {user_info.phone}")
+            return user_info.phone
+        else:
+            logger.warning(f"⚠️ Телефон не найден в профиле пользователя {user_id}")
+            return "Не указан"
+    except Exception as e:
+        logger.warning(f"⚠️ Не удалось получить профиль пользователя: {e}")
+        return "Не указан"
+
+
 def validate_phone(phone: str) -> bool:
     cleaned = re.sub(r'[\s\-\(\)]', '', phone)
     return bool(
@@ -299,13 +315,13 @@ async def send_refusal_notification(user_id: str):
     """Отправить админу уведомление об отказе пользователя"""
     try:
         logger.info(f"📋 Создание уведомления об отказе для {user_id}")
-        phone = user_data.get(user_id, {}).get('phone', 'Не указан')
+        phone_from_profile = await get_user_phone(user_id)
         message = (
             f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
             f"{'━' * 40}\n"
             f"Пользователь отказал в согласии на обработку ПД\n"
             f"👤 User ID: {user_id}\n"
-            f"📱 Телефон: {phone}\n"
+            f"📱 Телефон из профиля: {phone_from_profile}\n"
             f"📲 Источник: Max\n"
             f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
             f"{'━' * 40}"
@@ -322,13 +338,16 @@ async def submit_application(user_id: str, message: MessageCreated):
     data = user_data[user_id]
     name = data.get('name', 'Неизвестно')
 
+    # Получаем телефон из профиля пользователя
+    phone_from_profile = await get_user_phone(user_id)
+
     try:
         await db.save_application(
-            name=data['name'], phone=data['phone'], client_type=data['client_type'],
+            name=data['name'], phone=phone_from_profile, client_type=data['client_type'],
             category=data['category'], description=data['description'], source="Max",
             consent_pd=data['consent_pd'], consent_policy=data['consent_policy']
         )
-        logger.info(f"✓ Заявка {name} сохранена")
+        logger.info(f"✓ Заявка {name} сохранена с телефоном из профиля: {phone_from_profile}")
     except Exception as e:
         logger.error(f"✗ Ошибка сохранения заявки: {e}")
 
@@ -337,17 +356,18 @@ async def submit_application(user_id: str, message: MessageCreated):
     )
 
     try:
-        message = (
+        admin_message = (
             f"🔔 НОВАЯ ЗАЯВКА\n"
             f"{'━' * 30}\n"
             f"👤 Имя: {data['name']}\n"
-            f"📱 Телефон: {data['phone']}\n"
+            f"☎️ Телефон (введён): {data['phone']}\n"
+            f"📱 Телефон из профиля: {phone_from_profile}\n"
             f"🏷️ Тип: {data['client_type']}\n"
             f"📂 Категория: {data['category']}\n"
         )
         if data['description']:
-            message += f"💬 Описание: {data['description']}\n"
-        message += (
+            admin_message += f"💬 Описание: {data['description']}\n"
+        admin_message += (
             f"\n✅ Согласия:\n"
             f"  • Обработка ПД: {'✅ Да' if data['consent_pd'] else '❌ Нет'}\n"
             f"  • Политика: {'✅ Да' if data['consent_policy'] else '❌ Нет'}\n"
@@ -356,7 +376,7 @@ async def submit_application(user_id: str, message: MessageCreated):
             f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
             f"{'━' * 30}"
         )
-        await send_admin_message(message)
+        await send_admin_message(admin_message)
     except Exception as e:
         logger.error(f"✗ Ошибка отправки уведомления: {e}")
 
