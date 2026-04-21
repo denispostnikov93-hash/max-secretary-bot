@@ -147,9 +147,8 @@ async def send_admin_message(text: str):
 
 # ===== ОБРАБОТЧИКИ =====
 
-@dp.message_created(Command('start'))
-async def handle_start(message: MessageCreated):
-    user_id = str(message.message.sender.user_id)
+async def send_start_message(user_id: str):
+    """Отправить приветственное сообщение"""
     user_data[user_id] = {
         'consent_pd': False, 'consent_policy': False,
         'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
@@ -158,11 +157,28 @@ async def handle_start(message: MessageCreated):
 
     text = "👋 Добро пожаловать в Правовой центр \"Постников групп\"!\n\nМы поможем защитить ваши права."
 
-    await message.message.answer(
+    await bot.send_message(
+        chat_id=user_id,
         text=text,
         attachments=make_keyboard(("📝 Записаться", "record"), ("☎️ Позвонить", "help"))
     )
+    logger.info(f"✓ Приветствие отправлено {user_id}")
+
+
+@dp.message_created(Command('start'))
+async def handle_start(message: MessageCreated):
+    """Команда /start"""
+    user_id = str(message.message.sender.user_id)
     logger.info(f"📨 /start от {user_id}")
+    await send_start_message(user_id)
+
+
+@dp.bot_started()
+async def handle_bot_started(update):
+    """Обработчик события bot_started - нажата кнопка 'Начать'"""
+    user_id = str(update.user_id)
+    logger.info(f"🟢 bot_started от {user_id}")
+    await send_start_message(user_id)
 
 
 @dp.message_created(Command('my_id'))
