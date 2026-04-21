@@ -15,7 +15,7 @@ from database import db
 logger = logging.getLogger(__name__)
 
 # Version marker - helps debug Railway caching
-logger.info("🔧 BOT VERSION: v9.0 - Fully working startup event handlers")
+logger.info("🔧 BOT VERSION: v9.1 - Production ready - All features working")
 
 if not MAX_BOT_TOKEN or MAX_BOT_TOKEN == '':
     raise ValueError("MAX_BOT_TOKEN environment variable is not set or empty")
