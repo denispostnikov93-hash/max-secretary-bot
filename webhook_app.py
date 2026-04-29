@@ -126,7 +126,18 @@ def verify_webhook_signature(data: bytes, signature: str) -> bool:
         data,
         hashlib.sha256
     ).hexdigest()
-    return hmac.compare_digest(signature, expected_signature)
+
+    # Логирование для отладки
+    match = hmac.compare_digest(signature, expected_signature)
+    logger.debug(f"🔐 Подпись проверка: expected={expected_signature[:16]}... received={signature[:16]}...")
+    if not match:
+        logger.warning(f"⚠️ Сигнатуры не совпадают!")
+        logger.warning(f"  Ожидаем: {expected_signature}")
+        logger.warning(f"  Получили: {signature}")
+        logger.warning(f"  Secret (first 20): {WEBHOOK_SECRET[:20]}")
+        logger.warning(f"  Body length: {len(data)}")
+
+    return match
 
 
 # ===== WEBHOOK ENDPOINT =====
@@ -138,10 +149,17 @@ async def webhook_handler(request: Request):
         # Получаем тело запроса
         body = await request.body()
 
+        # Логируем входящие данные для отладки
+        logger.info(f"📨 Webhook запрос получен")
+        logger.info(f"  Content-Type: {request.headers.get('content-type', 'not set')}")
+        logger.info(f"  Body (первые 100 символов): {body[:100]}")
+
         # Проверяем сигнатуру
         signature = request.headers.get("X-Max-Bot-Api-Signature", "")
+        logger.info(f"  X-Max-Bot-Api-Signature header (first 32): {signature[:32] if signature else 'NOT SET'}")
+
         if not verify_webhook_signature(body, signature):
-            logger.warning("⚠️ Неверная сигнатура webhook")
+            logger.warning("⚠️ Неверная сигнатура webhook - ОТКЛОНЯЕМ СОБЫТИЕ")
             raise HTTPException(status_code=401, detail="Invalid signature")
 
         # Парсим JSON
