@@ -33,7 +33,7 @@ async def register_webhook():
         logger.info(f"📝 Регистрирую webhook: {WEBHOOK_URL}")
 
         async with aiohttp.ClientSession() as session:
-            # Сначала получим список существующих подписок
+            # Получим список существующих подписок
             async with session.get(
                 "https://platform-api.max.ru/subscriptions",
                 headers={"Authorization": MAX_BOT_TOKEN}
@@ -42,12 +42,28 @@ async def register_webhook():
                     subs = await resp.json()
                     logger.info(f"📋 Существующие подписки: {subs}")
 
-                    # Если уже есть подписка на тот же URL, пропускаем
-                    if subs.get("data"):
-                        for sub in subs["data"]:
-                            if sub.get("url") == WEBHOOK_URL:
-                                logger.info(f"✓ Webhook уже зарегистрирован: {WEBHOOK_URL}")
-                                return True
+                    subscriptions = subs.get("subscriptions", [])
+                    has_correct = False
+
+                    # Удаляем старые подписки на неправильные домены
+                    for sub in subscriptions:
+                        sub_url = sub.get("url", "")
+                        sub_id = sub.get("id")
+
+                        if sub_url == WEBHOOK_URL:
+                            has_correct = True
+                            logger.info(f"✓ Webhook уже зарегистрирован: {WEBHOOK_URL}")
+                        elif sub_url and "webhook" in sub_url:
+                            # Удаляем старые webhook подписки
+                            logger.info(f"🗑️ Удаляю старую подписку: {sub_url}")
+                            async with session.delete(
+                                f"https://platform-api.max.ru/subscriptions/{sub_id}",
+                                headers={"Authorization": MAX_BOT_TOKEN}
+                            ) as del_resp:
+                                logger.info(f"  Удаление статус: {del_resp.status}")
+
+                    if has_correct:
+                        return True
 
             # Регистрируем новый webhook
             payload = {
@@ -90,20 +106,18 @@ async def unregister_webhook():
             ) as resp:
                 if resp.status == 200:
                     subs = await resp.json()
+                    subscriptions = subs.get("subscriptions", [])
 
-                    if subs.get("data"):
-                        for sub in subs["data"]:
-                            if sub.get("url") == WEBHOOK_URL:
-                                sub_id = sub.get("id")
-
-                                # Удаляем подписку
-                                async with session.delete(
-                                    f"https://platform-api.max.ru/subscriptions/{sub_id}",
-                                    headers={"Authorization": MAX_BOT_TOKEN}
-                                ) as del_resp:
-                                    if del_resp.status in [200, 204]:
-                                        logger.info(f"✅ Webhook удалён")
-                                        return True
+                    for sub in subscriptions:
+                        if sub.get("url") == WEBHOOK_URL:
+                            sub_id = sub.get("id")
+                            async with session.delete(
+                                f"https://platform-api.max.ru/subscriptions/{sub_id}",
+                                headers={"Authorization": MAX_BOT_TOKEN}
+                            ) as del_resp:
+                                if del_resp.status in [200, 204]:
+                                    logger.info(f"✅ Webhook удалён")
+                                    return True
 
         return False
     except Exception as e:
