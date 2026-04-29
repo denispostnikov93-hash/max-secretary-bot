@@ -183,37 +183,40 @@ async def webhook_handler(request: Request):
 
 async def process_webhook_event(event: dict):
     """Обработать событие webhook"""
-    event_type = event.get("event_type")
-    data = event.get("data", {})
-
-    logger.info(f"🔄 Обработка события: {event_type}")
+    logger.info(f"📋 Структура события: {list(event.keys())}")
 
     try:
-        if event_type == "message_created":
-            await handle_webhook_message(data)
-        elif event_type == "message_callback":
-            await handle_webhook_callback(data)
-        elif event_type == "bot_started":
-            await handle_webhook_bot_started(data)
-        elif event_type == "dialog_cleared":
-            await handle_webhook_dialog_cleared(data)
+        # Определяем тип события по структуре (Max не присылает event_type)
+        if "message" in event:
+            logger.info(f"🔄 Тип события: message_created")
+            await handle_webhook_message(event)
+        elif "callback" in event:
+            logger.info(f"🔄 Тип события: message_callback")
+            await handle_webhook_callback(event)
+        elif "user" in event and "chat_id" in event:
+            logger.info(f"🔄 Тип события: bot_started")
+            await handle_webhook_bot_started(event)
         else:
-            logger.warning(f"⚠️ Неизвестный тип события: {event_type}")
+            logger.warning(f"⚠️ Неизвестный тип события. Структура: {list(event.keys())}")
 
     except Exception as e:
-        logger.error(f"❌ Ошибка обработки события {event_type}: {e}")
+        logger.error(f"❌ Ошибка обработки события: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
 
-async def handle_webhook_message(data: dict):
+async def handle_webhook_message(event: dict):
     """Обработать message_created событие"""
     try:
-        message = data.get("message", {})
-        sender_id = str(message.get("sender", {}).get("user_id"))
+        message = event.get("message", {})
+        sender_id = str(message.get("sender", {}).get("user_id", ""))
         text = message.get("text", "")
 
-        logger.info(f"📨 Сообщение от {sender_id}: {text[:50]}...")
+        logger.info(f"📨 Сообщение от {sender_id}: {text[:50] if text else '(пусто)'}...")
+
+        if not sender_id:
+            logger.warning(f"⚠️ Нет sender_id в сообщении")
+            return
 
         # Проверяем команды
         if text == "/start":
@@ -226,14 +229,20 @@ async def handle_webhook_message(data: dict):
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки сообщения: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
-async def handle_webhook_callback(data: dict):
+async def handle_webhook_callback(event: dict):
     """Обработать message_callback событие"""
     try:
-        callback = data.get("callback", {})
-        user_id = str(callback.get("user_id"))
+        callback = event.get("callback", {})
+        user_id = str(callback.get("user_id", ""))
         payload = callback.get("payload")
+
+        if not user_id:
+            logger.warning(f"⚠️ Нет user_id в callback")
+            return
 
         logger.info(f"🔘 Callback от {user_id}: {payload}")
 
@@ -251,19 +260,29 @@ async def handle_webhook_callback(data: dict):
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки callback: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
-async def handle_webhook_bot_started(data: dict):
+async def handle_webhook_bot_started(event: dict):
     """Обработать bot_started событие"""
     try:
-        user_id = str(data.get("user_id"))
-        chat_id = data.get("chat_id")
+        # Max отправляет: {"chat_id": ..., "user": {"user_id": ..., ...}}
+        user_data_obj = event.get("user", {})
+        user_id = str(user_data_obj.get("user_id", ""))
+        chat_id = event.get("chat_id")
+
+        if not user_id:
+            logger.warning(f"⚠️ Нет user_id в bot_started")
+            return
 
         logger.info(f"🟢 Bot started: user_id={user_id}, chat_id={chat_id}")
         await send_start_message(user_id)
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки bot_started: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 async def handle_webhook_dialog_cleared(data: dict):
