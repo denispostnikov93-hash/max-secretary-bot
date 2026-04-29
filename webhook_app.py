@@ -268,9 +268,10 @@ async def handle_webhook_callback(event: dict):
         if payload == "record":
             user_states[chat_id] = "consent"
             msg = (
-                f"📋 Подтвердите два согласия:\n\n"
-                f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
-                f"📄 Согласие на обработку ПД:\n{AGREEMENT_URL}"
+                f"Перед подачей заявки ознакомьтесь с документами и подтвердите:\n\n"
+                f"📄 Политика обработки данных: {PRIVACY_POLICY_URL}\n\n"
+                f"📄 Согласие на обработку данных: {AGREEMENT_URL}\n\n"
+                f"Нажмите обе кнопки ниже для подтверждения:"
             )
             await bot.send_message(
                 chat_id=chat_id,
@@ -287,25 +288,57 @@ async def handle_webhook_callback(event: dict):
         # Согласия
         elif payload == "consent_pd":
             user_data[chat_id]['consent_pd'] = True
-            await bot.send_message(chat_id=chat_id, text="✅ Согласие на обработку ПД получено!")
             if user_data[chat_id]['consent_policy']:
+                # Оба согласия получены
                 await ask_client_type(chat_id, user_id)
+            else:
+                # Только ПД согласие получено
+                msg = (
+                    "✅ Отлично! Вы подтвердили 1 из 2 согласий.\n\n"
+                    "Осталось подтвердить:\n"
+                    "✓ ознакомление с политикой обработки данных"
+                )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=msg,
+                    attachments=make_keyboard(
+                        ("✅ Ознакомлен с политикой", "consent_policy"),
+                        ("❌ Отказать", "refuse")
+                    )
+                )
         elif payload == "consent_policy":
             user_data[chat_id]['consent_policy'] = True
-            await bot.send_message(chat_id=chat_id, text="✅ Вы ознакомлены с политикой!")
             if user_data[chat_id]['consent_pd']:
+                # Оба согласия получены
                 await ask_client_type(chat_id, user_id)
+            else:
+                # Только политика согласие получено
+                msg = (
+                    "✅ Отлично! Вы подтвердили 1 из 2 согласий.\n\n"
+                    "Осталось подтвердить:\n"
+                    "✓ согласие на обработку персональных данных"
+                )
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=msg,
+                    attachments=make_keyboard(
+                        ("✅ Согласен на обработку ПД", "consent_pd"),
+                        ("❌ Отказать", "refuse")
+                    )
+                )
         elif payload == "refuse":
             await send_refusal_notification(user_id)
             user_states[chat_id] = "consent_retry"
             await bot.send_message(
                 chat_id=chat_id,
                 text=(
-                    "😔 Мы уважаем ваше решение.\n\n"
-                    "Однако по закону мы не можем продолжить прием заявки в данном формате без согласия на обработку персональных данных.\n\n"
-                    "Это не означает, что мы не можем помочь вам! Есть несколько вариантов:\n\n"
-                    "☎️ Позвоните нам: 8-495-999-85-89\n\n"
-                    "Или дайте согласие и оставьте заявку через этот формат:"
+                    "❌ Отказать в согласии\n\n"
+                    "😔 Мы уважаем ваше решение и соблюдаем закон о защите персональных данных.\n\n"
+                    "Без согласия на обработку ПД мы не можем продолжить стандартный процесс консультации.\n\n"
+                    "Но это не означает, что мы не можем вам помочь! 💪\n\n"
+                    "Выберите один из вариантов:\n"
+                    "• Позвоните нам по номеру 8-495-999-85-89 и получите бесплатную консультацию\n"
+                    "• Или дайте согласие и оставьте заявку через бота"
                 ),
                 attachments=make_keyboard(("✅ Дать согласие и оставить заявку", "back_consent"))
             )
@@ -609,16 +642,23 @@ async def submit_application(chat_id: str):
         # Отправляем подтверждение пользователю
         await bot.send_message(
             chat_id=chat_id,
-            text="✅ Спасибо! Ваша заявка отправлена. Наш специалист свяжется с вами в течение 24 часов."
+            text=f"✅ Спасибо, {name}! Заявка принята.\nНаш специалист свяжется с вами в ближайшее время."
         )
 
         # Отправляем заявку админу
+        consent_status = ""
+        if data.get('consent_pd'):
+            consent_status += "✅ Согласие на обработку ПД: ДА\n"
+        if data.get('consent_policy'):
+            consent_status += "✅ Ознакомление с политикой: ДА\n"
+
         admin_text = f"📋 Новая заявка:\n\n" \
                     f"👤 Имя: {data.get('name', '—')}\n" \
                     f"📞 Телефон: {data.get('phone', '—')}\n" \
                     f"🏢 Тип: {data.get('client_type', '—')}\n" \
                     f"❓ Вопрос: {data.get('category', '—')}\n" \
-                    f"📝 Описание: {data.get('description', '—')}\n"
+                    f"📝 Описание: {data.get('description', '—')}\n\n" \
+                    f"📋 Согласия:\n{consent_status}"
         await bot.send_message(chat_id=admin_id, text=admin_text)
 
         # Очищаем данные пользователя
