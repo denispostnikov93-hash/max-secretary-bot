@@ -1,28 +1,25 @@
 """
-Max бот-секретарь
+Max бот-секретарь - Webhook версия
+Запускает FastAPI приложение вместо long polling
 """
 import sys
-print("[START] main.py initializing", file=sys.stderr)
-
-import asyncio
 import logging
 import os
+import uvicorn
 
-print(f"[ENV] All MAX_ variables:", file=sys.stderr)
-for k, v in os.environ.items():
-    if k.startswith('MAX'):
-        print(f"  {k}={v[:30] if len(v) > 30 else v}", file=sys.stderr)
-
-from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID
-print(f"[IMPORT] MAX_BOT_TOKEN from config: {repr(MAX_BOT_TOKEN[:20] if MAX_BOT_TOKEN else MAX_BOT_TOKEN)}", file=sys.stderr)
-from database import db
-from max_bot import start_polling
-
+# Инициализация логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+from config import MAX_BOT_TOKEN, MAX_ADMIN_USER_ID, WEBHOOK_PORT
+
+logger.info(f"[CONFIG] MAX_BOT_TOKEN установлен: {bool(MAX_BOT_TOKEN)}")
+logger.info(f"[CONFIG] MAX_ADMIN_USER_ID: {MAX_ADMIN_USER_ID}")
+logger.info(f"[CONFIG] WEBHOOK_PORT: {WEBHOOK_PORT}")
+
 
 def validate_config():
     """Проверить конфигурацию"""
@@ -34,24 +31,29 @@ def validate_config():
         return False
     return True
 
-async def main():
+
+if __name__ == "__main__":
     logger.info("=" * 60)
-    logger.info("🤖 MAX БОТ-СЕКРЕТАРЬ")
+    logger.info("🤖 MAX БОТ-СЕКРЕТАРЬ (Webhook версия)")
     logger.info("=" * 60)
 
     if not validate_config():
         logger.error("❌ Конфигурация неполная. Проверь переменные окружения.")
-        return
+        sys.exit(1)
 
     try:
-        logger.info("📦 Инициализирую БД...")
-        await db.init()
-        logger.info("✓ БД готова")
-
-        logger.info("📱 Запускаю Max бота...")
+        logger.info("🚀 Запускаю FastAPI приложение...")
+        logger.info(f"📝 Webhook port: {WEBHOOK_PORT}")
         logger.info("=" * 60)
 
-        await start_polling()
+        # Запускаем FastAPI приложение через uvicorn
+        uvicorn.run(
+            "webhook_app:app",
+            host="0.0.0.0",
+            port=WEBHOOK_PORT,
+            log_level="info",
+            reload=False
+        )
 
     except KeyboardInterrupt:
         logger.info("⏹️ Бот остановлен")
@@ -59,6 +61,4 @@ async def main():
         logger.error(f"❌ Ошибка: {e}")
         import traceback
         logger.error(traceback.format_exc())
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        sys.exit(1)
