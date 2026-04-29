@@ -256,16 +256,16 @@ async def handle_webhook_callback(event: dict):
 
         logger.info(f"🔘 Callback от user_id={user_id}, chat_id={chat_id}: {payload}")
 
-        # Инициализируем user_data если нужно
-        if user_id not in user_data:
-            user_data[user_id] = {
+        # Инициализируем user_data если нужно (используем chat_id как ключ)
+        if chat_id not in user_data:
+            user_data[chat_id] = {
                 'consent_pd': False, 'consent_policy': False,
                 'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
             }
 
         # Главное меню
         if payload == "record":
-            user_states[user_id] = "consent"
+            user_states[chat_id] = "consent"
             msg = (
                 f"📋 Подтвердите два согласия:\n\n"
                 f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
@@ -285,18 +285,18 @@ async def handle_webhook_callback(event: dict):
 
         # Согласия
         elif payload == "consent_pd":
-            user_data[user_id]['consent_pd'] = True
+            user_data[chat_id]['consent_pd'] = True
             await bot.send_message(chat_id=chat_id, text="✅ Согласие на обработку ПД получено!")
-            if user_data[user_id]['consent_policy']:
+            if user_data[chat_id]['consent_policy']:
                 await ask_client_type(chat_id, user_id)
         elif payload == "consent_policy":
-            user_data[user_id]['consent_policy'] = True
+            user_data[chat_id]['consent_policy'] = True
             await bot.send_message(chat_id=chat_id, text="✅ Вы ознакомлены с политикой!")
-            if user_data[user_id]['consent_pd']:
+            if user_data[chat_id]['consent_pd']:
                 await ask_client_type(chat_id, user_id)
         elif payload == "refuse":
             await send_refusal_notification(user_id)
-            user_states[user_id] = "consent_retry"
+            user_states[chat_id] = "consent_retry"
             await bot.send_message(
                 chat_id=chat_id,
                 text=(
@@ -309,11 +309,11 @@ async def handle_webhook_callback(event: dict):
                 attachments=make_keyboard(("✅ Дать согласие и оставить заявку", "back_consent"))
             )
         elif payload == "back_consent":
-            user_data[user_id] = {
+            user_data[chat_id] = {
                 'consent_pd': False, 'consent_policy': False,
                 'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
             }
-            user_states[user_id] = "consent"
+            user_states[chat_id] = "consent"
             msg = (
                 f"📋 Подтвердите два согласия:\n\n"
                 f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
@@ -331,8 +331,8 @@ async def handle_webhook_callback(event: dict):
 
         # Выбор типа клиента
         elif payload == "physical":
-            user_data[user_id]['client_type'] = "Физическое лицо"
-            user_states[user_id] = "category_and_desc"
+            user_data[chat_id]['client_type'] = "Физическое лицо"
+            user_states[chat_id] = "category_and_desc"
             await bot.send_message(
                 chat_id=chat_id,
                 text=(
@@ -347,8 +347,8 @@ async def handle_webhook_callback(event: dict):
                 )
             )
         elif payload == "legal":
-            user_data[user_id]['client_type'] = "Юридическое лицо"
-            user_states[user_id] = "category_and_desc"
+            user_data[chat_id]['client_type'] = "Юридическое лицо"
+            user_states[chat_id] = "category_and_desc"
             await bot.send_message(
                 chat_id=chat_id,
                 text=(
@@ -399,9 +399,9 @@ async def handle_webhook_dialog_cleared(data: dict):
 
         # Очищаем данные пользователя
         if user_id in user_data:
-            del user_data[user_id]
+            del user_data[chat_id]
         if user_id in user_states:
-            del user_states[user_id]
+            del user_states[chat_id]
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки dialog_cleared: {e}")
@@ -411,7 +411,7 @@ async def handle_webhook_dialog_cleared(data: dict):
 
 async def ask_client_type(chat_id: str, user_id: str):
     """Спросить тип клиента после получения обоих согласий"""
-    user_states[user_id] = "client_type"
+    user_states[chat_id] = "client_type"
     await bot.send_message(
         chat_id=chat_id,
         text="✅ Спасибо! Теперь выберите тип клиента:",
@@ -450,11 +450,11 @@ async def handle_record_button(user_id: str):
     logger.info(f"📝 Нажата кнопка Записаться от {user_id}")
 
     if user_id not in user_data:
-        user_data[user_id] = {
+        user_data[chat_id] = {
             'consent_pd': False, 'consent_policy': False,
             'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
         }
-    user_states[user_id] = "consent"
+    user_states[chat_id] = "consent"
 
     text = "📋 Перед записью на консультацию, пожалуйста:\n\n1️⃣ Ознакомьтесь с Политикой конфиденциальности\n2️⃣ Согласитесь с Условиями обслуживания"
 
@@ -484,14 +484,14 @@ async def handle_agree_all(user_id: str):
     logger.info(f"✅ Согласие от {user_id}")
 
     if user_id not in user_data:
-        user_data[user_id] = {
+        user_data[chat_id] = {
             'consent_pd': False, 'consent_policy': False,
             'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
         }
 
-    user_data[user_id]['consent_pd'] = True
-    user_data[user_id]['consent_policy'] = True
-    user_states[user_id] = "client_type"
+    user_data[chat_id]['consent_pd'] = True
+    user_data[chat_id]['consent_policy'] = True
+    user_states[chat_id] = "client_type"
 
     text = "👤 Выберите, как вас классифицировать:"
 
@@ -517,7 +517,7 @@ async def handle_refuse_button(user_id: str):
         attachments=make_keyboard(("📝 Записаться заново", "record"))
     )
 
-    user_states[user_id] = "menu"
+    user_states[chat_id] = "menu"
 
 
 async def handle_client_type(user_id: str, client_type_key: str):
@@ -527,13 +527,13 @@ async def handle_client_type(user_id: str, client_type_key: str):
     logger.info(f"🏢 Выбран тип клиента {client_type} от {user_id}")
 
     if user_id not in user_data:
-        user_data[user_id] = {
+        user_data[chat_id] = {
             'consent_pd': False, 'consent_policy': False,
             'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
         }
 
-    user_data[user_id]['client_type'] = client_type
-    user_states[user_id] = "waiting_name"
+    user_data[chat_id]['client_type'] = client_type
+    user_states[chat_id] = "waiting_name"
 
     text = f"✅ Вы выбрали: {client_type}\n\n📝 Введите ваше имя (или название компании):"
 
@@ -559,17 +559,17 @@ async def handle_webhook_application_message(chat_id: str, text: str, message: d
 
         # Категория и описание ситуации
         if state == "category_and_desc":
-            category, description = parse_category_and_description(text, user_data[user_id].get('client_type', ''))
-            user_data[user_id]['category'] = category
-            user_data[user_id]['description'] = description
-            user_states[user_id] = "name"
+            category, description = parse_category_and_description(text, user_data[chat_id].get('client_type', ''))
+            user_data[chat_id]['category'] = category
+            user_data[chat_id]['description'] = description
+            user_states[chat_id] = "name"
             await bot.send_message(chat_id=chat_id, text="Как вас зовут?")
             return
 
         # Ожидание имени
         if state == "name":
-            user_data[user_id]['name'] = text
-            user_states[user_id] = "phone"
+            user_data[chat_id]['name'] = text
+            user_states[chat_id] = "phone"
             await bot.send_message(chat_id=chat_id, text="Ваш номер телефона?")
             return
 
@@ -582,7 +582,7 @@ async def handle_webhook_application_message(chat_id: str, text: str, message: d
                 )
                 return
 
-            user_data[user_id]['phone'] = text
+            user_data[chat_id]['phone'] = text
             await submit_application(user_id, chat_id)
             return
 
@@ -595,7 +595,7 @@ async def handle_webhook_application_message(chat_id: str, text: str, message: d
 async def submit_application(user_id: str, chat_id: str):
     """Отправить заявку админу и подтверждение пользователю"""
     try:
-        data = user_data[user_id]
+        data = user_data[chat_id]
         name = data.get('name', 'Неизвестно')
 
         await db.save_application(
@@ -609,24 +609,24 @@ async def submit_application(user_id: str, chat_id: str):
 
     await bot.send_message(
         chat_id=chat_id,
-        text=f"✅ Спасибо, {user_data[user_id].get('name', 'вы')}! Заявка принята.\nНаш специалист свяжется с вами в ближайшее время."
+        text=f"✅ Спасибо, {user_data[chat_id].get('name', 'вы')}! Заявка принята.\nНаш специалист свяжется с вами в ближайшее время."
     )
 
     try:
         admin_message = (
             f"🔔 НОВАЯ ЗАЯВКА\n"
             f"{'━' * 30}\n"
-            f"👤 Имя: {user_data[user_id].get('name', '—')}\n"
-            f"☎️ Телефон: {user_data[user_id].get('phone', '—')}\n"
-            f"🏷️ Тип: {user_data[user_id].get('client_type', '—')}\n"
-            f"📂 Категория: {user_data[user_id].get('category', '—')}\n"
+            f"👤 Имя: {user_data[chat_id].get('name', '—')}\n"
+            f"☎️ Телефон: {user_data[chat_id].get('phone', '—')}\n"
+            f"🏷️ Тип: {user_data[chat_id].get('client_type', '—')}\n"
+            f"📂 Категория: {user_data[chat_id].get('category', '—')}\n"
         )
-        if user_data[user_id].get('description'):
-            admin_message += f"💬 Описание: {user_data[user_id]['description']}\n"
+        if user_data[chat_id].get('description'):
+            admin_message += f"💬 Описание: {user_data[chat_id]['description']}\n"
         admin_message += (
             f"\n✅ Согласия:\n"
-            f"  • Обработка ПД: {'✅ Да' if user_data[user_id].get('consent_pd') else '❌ Нет'}\n"
-            f"  • Политика: {'✅ Да' if user_data[user_id].get('consent_policy') else '❌ Нет'}\n"
+            f"  • Обработка ПД: {'✅ Да' if user_data[chat_id].get('consent_pd') else '❌ Нет'}\n"
+            f"  • Политика: {'✅ Да' if user_data[chat_id].get('consent_policy') else '❌ Нет'}\n"
             f"\n👤 Профиль: https://web.max.ru/{user_id}\n"
             f"📲 Источник: Max\n"
             f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
@@ -636,9 +636,9 @@ async def submit_application(user_id: str, chat_id: str):
     except Exception as e:
         logger.error(f"✗ Ошибка отправки уведомления: {e}")
 
-    user_states[user_id] = None
+    user_states[chat_id] = None
     if user_id in user_data:
-        del user_data[user_id]
+        del user_data[chat_id]
 
 
 # ===== ЗДОРОВЬЕ И ИНИЦИАЛИЗАЦИЯ =====
