@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 import aiohttp
 
-from config import MAX_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_PORT, WEBHOOK_SECRET, MAX_ADMIN_USER_ID
+from config import MAX_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_PORT, WEBHOOK_SECRET, MAX_ADMIN_USER_ID, PRIVACY_POLICY_URL, AGREEMENT_URL
 from database import db
 from max_bot import (
     bot, send_admin_message, send_start_message,
