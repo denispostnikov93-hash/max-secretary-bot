@@ -187,12 +187,13 @@ async def process_webhook_event(event: dict):
 
     try:
         # Определяем тип события по структуре (Max не присылает event_type)
-        if "message" in event:
-            logger.info(f"🔄 Тип события: message_created")
-            await handle_webhook_message(event)
-        elif "callback" in event:
+        # Callback имеет приоритет, так как может быть в одном событии с message
+        if "callback" in event:
             logger.info(f"🔄 Тип события: message_callback")
             await handle_webhook_callback(event)
+        elif "message" in event:
+            logger.info(f"🔄 Тип события: message_created")
+            await handle_webhook_message(event)
         elif "user" in event and "chat_id" in event:
             logger.info(f"🔄 Тип события: bot_started")
             await handle_webhook_bot_started(event)
@@ -241,26 +242,125 @@ async def handle_webhook_callback(event: dict):
     """Обработать message_callback событие"""
     try:
         callback = event.get("callback", {})
+        message = event.get("message", {})
+        recipient = message.get("recipient", {})
+
         user_id = str(callback.get("user_id", ""))
+        chat_id = str(recipient.get("chat_id", ""))
         payload = callback.get("payload")
 
-        if not user_id:
-            logger.warning(f"⚠️ Нет user_id в callback")
+        if not user_id or not chat_id:
+            logger.warning(f"⚠️ Нет user_id или chat_id в callback")
             return
 
-        logger.info(f"🔘 Callback от {user_id}: {payload}")
+        logger.info(f"🔘 Callback от user_id={user_id}, chat_id={chat_id}: {payload}")
 
-        # Обработка callbacks (кнопки)
+        # Инициализируем user_data если нужно
+        if user_id not in user_data:
+            user_data[user_id] = {
+                'consent_pd': False, 'consent_policy': False,
+                'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
+            }
+
+        # Главное меню
         if payload == "record":
-            await handle_record_button(user_id)
+            user_states[user_id] = "consent"
+            msg = (
+                f"📋 Подтвердите два согласия:\n\n"
+                f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
+                f"📄 Согласие на обработку ПД:\n{AGREEMENT_URL}"
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                attachments=make_keyboard(
+                    ("✅ Согласен на обработку ПД", "consent_pd"),
+                    ("✅ Ознакомлен с политикой", "consent_policy"),
+                    ("❌ Отказать", "refuse")
+                )
+            )
         elif payload == "help":
-            await handle_help_button(user_id)
-        elif payload == "agree_all":
-            await handle_agree_all(user_id)
+            await bot.send_message(chat_id=chat_id, text="☎️ Позвоните нам: 8-495-999-85-89")
+
+        # Согласия
+        elif payload == "consent_pd":
+            user_data[user_id]['consent_pd'] = True
+            await bot.send_message(chat_id=chat_id, text="✅ Согласие на обработку ПД получено!")
+            if user_data[user_id]['consent_policy']:
+                await ask_client_type(chat_id, user_id)
+        elif payload == "consent_policy":
+            user_data[user_id]['consent_policy'] = True
+            await bot.send_message(chat_id=chat_id, text="✅ Вы ознакомлены с политикой!")
+            if user_data[user_id]['consent_pd']:
+                await ask_client_type(chat_id, user_id)
         elif payload == "refuse":
-            await handle_refuse_button(user_id)
-        elif payload in ["individual", "company"]:
-            await handle_client_type(user_id, payload)
+            await send_refusal_notification(user_id)
+            user_states[user_id] = "consent_retry"
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "😔 Мы уважаем ваше решение.\n\n"
+                    "Однако по закону мы не можем продолжить прием заявки в данном формате без согласия на обработку персональных данных.\n\n"
+                    "Это не означает, что мы не можем помочь вам! Есть несколько вариантов:\n\n"
+                    "☎️ Позвоните нам: 8-495-999-85-89\n\n"
+                    "Или дайте согласие и оставьте заявку через этот формат:"
+                ),
+                attachments=make_keyboard(("✅ Дать согласие и оставить заявку", "back_consent"))
+            )
+        elif payload == "back_consent":
+            user_data[user_id] = {
+                'consent_pd': False, 'consent_policy': False,
+                'client_type': None, 'category': None, 'name': None, 'phone': None, 'description': None
+            }
+            user_states[user_id] = "consent"
+            msg = (
+                f"📋 Подтвердите два согласия:\n\n"
+                f"📄 Политика обработки данных:\n{PRIVACY_POLICY_URL}\n\n"
+                f"📄 Согласие на обработку ПД:\n{AGREEMENT_URL}"
+            )
+            await bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                attachments=make_keyboard(
+                    ("✅ Согласен на обработку ПД", "consent_pd"),
+                    ("✅ Ознакомлен с политикой", "consent_policy"),
+                    ("❌ Отказать", "refuse")
+                )
+            )
+
+        # Выбор типа клиента
+        elif payload == "physical":
+            user_data[user_id]['client_type'] = "Физическое лицо"
+            user_states[user_id] = "category_and_desc"
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Напишите категорию вопроса и кратко опишите ситуацию:\n\n"
+                    "Категории для физических лиц:\n"
+                    "• ДТП\n"
+                    "• Семейное право\n"
+                    "• Недвижимость\n"
+                    "• Трудовые споры\n"
+                    "• Другое\n\n"
+                    "Пример: \"ДТП. Со мной произошло ДТП на перекрёстке\""
+                )
+            )
+        elif payload == "legal":
+            user_data[user_id]['client_type'] = "Юридическое лицо"
+            user_states[user_id] = "category_and_desc"
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    "Напишите категорию вопроса и кратко опишите ситуацию:\n\n"
+                    "Категории для юридических лиц:\n"
+                    "• Регистрация бизнеса\n"
+                    "• Договоры и споры\n"
+                    "• Трудовые вопросы\n"
+                    "• Налоги и штрафы\n"
+                    "• Другое\n\n"
+                    "Пример: \"Регистрация бизнеса. Нужно помочь с регистрацией ООО\""
+                )
+            )
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки callback: {e}")
@@ -304,6 +404,42 @@ async def handle_webhook_dialog_cleared(data: dict):
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки dialog_cleared: {e}")
+
+
+# ===== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ =====
+
+async def ask_client_type(chat_id: str, user_id: str):
+    """Спросить тип клиента после получения обоих согласий"""
+    user_states[user_id] = "client_type"
+    await bot.send_message(
+        chat_id=chat_id,
+        text="✅ Спасибо! Теперь выберите тип клиента:",
+        attachments=make_keyboard(
+            ("👤 Физическое лицо", "physical"),
+            ("🏢 Юридическое лицо", "legal")
+        )
+    )
+
+
+async def send_refusal_notification(user_id: str):
+    """Отправить админу уведомление об отказе пользователя"""
+    try:
+        logger.info(f"📋 Создание уведомления об отказе для {user_id}")
+        message = (
+            f"⚠️ ОТКАЗ ОТ ОБРАБОТКИ ПЕРСОНАЛЬНЫХ ДАННЫХ\n"
+            f"{'━' * 40}\n"
+            f"Пользователь отказал в согласии на обработку ПД\n"
+            f"👤 Профиль: https://web.max.ru/{user_id}\n"
+            f"📲 Источник: Max\n"
+            f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+            f"{'━' * 40}"
+        )
+        logger.info(f"📤 Отправляю уведомление об отказе")
+        await send_admin_message(message)
+    except Exception as e:
+        logger.error(f"✗ ОШИБКА отправки уведомления об отказе: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 
 # ===== ОБРАБОТЧИКИ КНОПОК И СООБЩЕНИЙ =====
@@ -405,61 +541,103 @@ async def handle_client_type(user_id: str, client_type_key: str):
 
 async def handle_webhook_application_message(chat_id: str, text: str, message: dict, user_id: str = ""):
     """Обработка сообщения для заявки"""
-    # Используем chat_id как ключ в хранилище (так как это реальный идентификатор диалога)
-    if chat_id not in user_data:
-        await send_start_message(chat_id)
-        return
-
-    state = user_states.get(chat_id, "menu")
-
-    logger.info(f"🔄 Обработка сообщения от chat_id={chat_id}, user_id={user_id}, состояние: {state}")
-
-    if state == "waiting_name":
-        user_data[chat_id]['name'] = text
-        user_states[chat_id] = "waiting_phone"
-
-        text_resp = "📞 Спасибо! Введите ваш номер телефона:"
-        await bot.send_message(chat_id=chat_id, text=text_resp)
-
-    elif state == "waiting_phone":
-        if not validate_phone(text):
-            await bot.send_message(chat_id=chat_id, text="❌ Некорректный номер телефона. Попробуйте снова.")
+    try:
+        # Используем user_id как основной ключ (как в исходном коде)
+        if user_id not in user_data:
+            await send_start_message(chat_id)
             return
 
-        user_data[chat_id]['phone'] = text
-        user_states[chat_id] = "waiting_description"
+        state = user_states.get(user_id, "menu")
 
-        client_type = user_data[chat_id].get('client_type', 'Клиент')
-        text_resp = f"📋 Спасибо, {user_data[chat_id]['name']}!\n\nОпишите кратко вашу проблему или вопрос:"
+        logger.info(f"🔄 Обработка сообщения от user_id={user_id}, chat_id={chat_id}, состояние: {state}")
 
-        await bot.send_message(chat_id=chat_id, text=text_resp)
+        # Если в главном меню - показываем приветствие
+        if state == "menu" or state is None:
+            await send_start_message(chat_id)
+            return
 
-    elif state == "waiting_description":
-        category, description = parse_category_and_description(text, user_data[chat_id].get('client_type', ''))
+        # Категория и описание ситуации
+        if state == "category_and_desc":
+            category, description = parse_category_and_description(text, user_data[user_id].get('client_type', ''))
+            user_data[user_id]['category'] = category
+            user_data[user_id]['description'] = description
+            user_states[user_id] = "name"
+            await bot.send_message(chat_id=chat_id, text="Как вас зовут?")
+            return
 
-        user_data[chat_id]['category'] = category
-        user_data[chat_id]['description'] = description
-        user_states[chat_id] = "completed"
+        # Ожидание имени
+        if state == "name":
+            user_data[user_id]['name'] = text
+            user_states[user_id] = "phone"
+            await bot.send_message(chat_id=chat_id, text="Ваш номер телефона?")
+            return
 
-        # Отправляем заявку админу
-        admin_text = f"""
-📋 **НОВАЯ ЗАЯВКА**
+        # Ожидание номера телефона
+        if state == "phone":
+            if not validate_phone(text):
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Пожалуйста, введите корректный номер телефона.\nПримеры: +7 999 123-45-67 или 79991234567"
+                )
+                return
 
-👤 Имя: {user_data[chat_id]['name']}
-📱 Телефон: {user_data[chat_id]['phone']}
-👨‍⚖️ Тип клиента: {user_data[chat_id]['client_type']}
-📌 Категория: {category}
-📝 Описание: {description}
+            user_data[user_id]['phone'] = text
+            await submit_application(user_id, chat_id)
+            return
 
-👤 User ID: {user_id}
-👤 Chat ID: {chat_id}
-⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
-"""
+    except Exception as e:
+        logger.error(f"❌ Ошибка обработки сообщения: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
-        await send_admin_message(admin_text)
 
-        text_resp = "✅ Спасибо за заявку! Мы свяжемся с вами в ближайшее время."
-        await bot.send_message(chat_id=chat_id, text=text_resp)
+async def submit_application(user_id: str, chat_id: str):
+    """Отправить заявку админу и подтверждение пользователю"""
+    try:
+        data = user_data[user_id]
+        name = data.get('name', 'Неизвестно')
+
+        await db.save_application(
+            name=data['name'], phone=data.get('phone', ''), client_type=data.get('client_type', ''),
+            category=data.get('category', ''), description=data.get('description', ''), source="Max",
+            consent_pd=data.get('consent_pd', False), consent_policy=data.get('consent_policy', False)
+        )
+        logger.info(f"✓ Заявка {name} сохранена")
+    except Exception as e:
+        logger.error(f"✗ Ошибка сохранения заявки: {e}")
+
+    await bot.send_message(
+        chat_id=chat_id,
+        text=f"✅ Спасибо, {user_data[user_id].get('name', 'вы')}! Заявка принята.\nНаш специалист свяжется с вами в ближайшее время."
+    )
+
+    try:
+        admin_message = (
+            f"🔔 НОВАЯ ЗАЯВКА\n"
+            f"{'━' * 30}\n"
+            f"👤 Имя: {user_data[user_id].get('name', '—')}\n"
+            f"☎️ Телефон: {user_data[user_id].get('phone', '—')}\n"
+            f"🏷️ Тип: {user_data[user_id].get('client_type', '—')}\n"
+            f"📂 Категория: {user_data[user_id].get('category', '—')}\n"
+        )
+        if user_data[user_id].get('description'):
+            admin_message += f"💬 Описание: {user_data[user_id]['description']}\n"
+        admin_message += (
+            f"\n✅ Согласия:\n"
+            f"  • Обработка ПД: {'✅ Да' if user_data[user_id].get('consent_pd') else '❌ Нет'}\n"
+            f"  • Политика: {'✅ Да' if user_data[user_id].get('consent_policy') else '❌ Нет'}\n"
+            f"\n👤 Профиль: https://web.max.ru/{user_id}\n"
+            f"📲 Источник: Max\n"
+            f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+            f"{'━' * 30}"
+        )
+        await send_admin_message(admin_message)
+    except Exception as e:
+        logger.error(f"✗ Ошибка отправки уведомления: {e}")
+
+    user_states[user_id] = None
+    if user_id in user_data:
+        del user_data[user_id]
 
 
 # ===== ЗДОРОВЬЕ И ИНИЦИАЛИЗАЦИЯ =====
