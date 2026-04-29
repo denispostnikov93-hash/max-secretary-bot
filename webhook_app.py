@@ -210,6 +210,8 @@ async def handle_webhook_message(event: dict):
     """Обработать message_created событие"""
     try:
         message = event.get("message", {})
+        logger.info(f"📨 DEBUG message content: {json.dumps(message, ensure_ascii=False)}")
+
         recipient = message.get("recipient", {})
 
         # В Max API нужно использовать dialog chat_id, не user_id!
