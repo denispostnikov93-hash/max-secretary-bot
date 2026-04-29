@@ -543,12 +543,12 @@ async def handle_client_type(user_id: str, client_type_key: str):
 async def handle_webhook_application_message(chat_id: str, text: str, message: dict, user_id: str = ""):
     """Обработка сообщения для заявки"""
     try:
-        # Используем user_id как основной ключ (как в исходном коде)
-        if user_id not in user_data:
+        # Используем chat_id как основной ключ (консистентно во всех событиях)
+        if chat_id not in user_data:
             await send_start_message(chat_id)
             return
 
-        state = user_states.get(user_id, "menu")
+        state = user_states.get(chat_id, "menu")
 
         logger.info(f"🔄 Обработка сообщения от user_id={user_id}, chat_id={chat_id}, состояние: {state}")
 
@@ -583,7 +583,7 @@ async def handle_webhook_application_message(chat_id: str, text: str, message: d
                 return
 
             user_data[chat_id]['phone'] = text
-            await submit_application(user_id, chat_id)
+            await submit_application(chat_id)
             return
 
     except Exception as e:
@@ -592,7 +592,7 @@ async def handle_webhook_application_message(chat_id: str, text: str, message: d
         logger.error(traceback.format_exc())
 
 
-async def submit_application(user_id: str, chat_id: str):
+async def submit_application(chat_id: str):
     """Отправить заявку админу и подтверждение пользователю"""
     try:
         data = user_data[chat_id]
@@ -603,9 +603,33 @@ async def submit_application(user_id: str, chat_id: str):
             category=data.get('category', ''), description=data.get('description', ''), source="Max",
             consent_pd=data.get('consent_pd', False), consent_policy=data.get('consent_policy', False)
         )
-        logger.info(f"✓ Заявка {name} сохранена")
+        logger.info(f"✓ Заявка {name} сохранена в БД")
+
+        # Отправляем подтверждение пользователю
+        await bot.send_message(
+            chat_id=chat_id,
+            text="✅ Спасибо! Ваша заявка отправлена. Наш специалист свяжется с вами в течение 24 часов."
+        )
+
+        # Отправляем заявку админу
+        admin_text = f"📋 Новая заявка:\n\n" \
+                    f"👤 Имя: {data.get('name', '—')}\n" \
+                    f"📞 Телефон: {data.get('phone', '—')}\n" \
+                    f"🏢 Тип: {data.get('client_type', '—')}\n" \
+                    f"❓ Вопрос: {data.get('category', '—')}\n" \
+                    f"📝 Описание: {data.get('description', '—')}\n"
+        await bot.send_message(chat_id=admin_id, text=admin_text)
+
+        # Очищаем данные пользователя
+        if chat_id in user_data:
+            del user_data[chat_id]
+        if chat_id in user_states:
+            del user_states[chat_id]
+
     except Exception as e:
         logger.error(f"✗ Ошибка сохранения заявки: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
     await bot.send_message(
         chat_id=chat_id,
