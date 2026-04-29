@@ -31,6 +31,7 @@ async def register_webhook():
     """Регистрировать webhook URL в Max API"""
     try:
         logger.info(f"📝 Регистрирую webhook: {WEBHOOK_URL}")
+        logger.info(f"📝 Secret (первые 20 символов): {WEBHOOK_SECRET[:20]}")
 
         async with aiohttp.ClientSession() as session:
             # Получим список существующих подписок
@@ -43,33 +44,26 @@ async def register_webhook():
                     logger.info(f"📋 Существующие подписки: {subs}")
 
                     subscriptions = subs.get("subscriptions", [])
-                    has_correct = False
 
-                    # Удаляем старые подписки на неправильные домены
+                    # УДАЛЯЕМ ВСЕ webhook подписки (старые secret может быть другой!)
                     for sub in subscriptions:
                         sub_url = sub.get("url", "")
                         sub_id = sub.get("id")
 
-                        if sub_url == WEBHOOK_URL:
-                            has_correct = True
-                            logger.info(f"✓ Webhook уже зарегистрирован: {WEBHOOK_URL}")
-                        elif sub_url and "webhook" in sub_url:
-                            # Удаляем старые webhook подписки
-                            logger.info(f"🗑️ Удаляю старую подписку: {sub_url}")
+                        if sub_url and "webhook" in sub_url:
+                            logger.info(f"🗑️ Удаляю подписку: {sub_url}")
                             async with session.delete(
                                 f"https://platform-api.max.ru/subscriptions/{sub_id}",
                                 headers={"Authorization": MAX_BOT_TOKEN}
                             ) as del_resp:
-                                logger.info(f"  Удаление статус: {del_resp.status}")
+                                logger.info(f"  Статус: {del_resp.status}")
 
-                    if has_correct:
-                        return True
-
-            # Регистрируем новый webhook
+            # Регистрируем новый webhook с текущим secret
             payload = {
                 "url": WEBHOOK_URL,
                 "secret": WEBHOOK_SECRET
             }
+            logger.info(f"📤 Отправляю новую подписку...")
 
             async with session.post(
                 "https://platform-api.max.ru/subscriptions",
@@ -81,7 +75,7 @@ async def register_webhook():
                 logger.info(f"📝 Ответ: {result}")
 
                 if resp.status in [200, 201]:
-                    logger.info(f"✅ Webhook успешно зарегистрирован: {WEBHOOK_URL}")
+                    logger.info(f"✅ Webhook успешно зарегистрирован с НОВЫМ secret: {WEBHOOK_URL}")
                     return True
                 else:
                     logger.error(f"❌ Ошибка регистрации webhook: {result}")
