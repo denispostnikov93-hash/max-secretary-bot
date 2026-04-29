@@ -209,23 +209,27 @@ async def handle_webhook_message(event: dict):
     """Обработать message_created событие"""
     try:
         message = event.get("message", {})
-        sender_id = str(message.get("sender", {}).get("user_id", ""))
+        recipient = message.get("recipient", {})
+
+        # В Max API нужно использовать dialog chat_id, не user_id!
+        chat_id = str(recipient.get("chat_id", ""))
+        user_id = str(recipient.get("user_id", ""))
         text = message.get("text", "")
 
-        logger.info(f"📨 Сообщение от {sender_id}: {text[:50] if text else '(пусто)'}...")
+        logger.info(f"📨 Сообщение от user_id={user_id}, chat_id={chat_id}: {text[:50] if text else '(пусто)'}...")
 
-        if not sender_id:
-            logger.warning(f"⚠️ Нет sender_id в сообщении")
+        if not chat_id:
+            logger.warning(f"⚠️ Нет chat_id в сообщении")
             return
 
         # Проверяем команды
         if text == "/start":
-            await send_start_message(sender_id)
+            await send_start_message(chat_id)
         elif text == "/my_id":
-            await bot.send_message(chat_id=sender_id, text=f"ℹ️ Ваш Max ID: `{sender_id}`")
+            await bot.send_message(chat_id=chat_id, text=f"ℹ️ Ваш Max ID: `{user_id}`")
         else:
             # Обработка как обычное сообщение для заявки
-            await handle_webhook_application_message(sender_id, text, message)
+            await handle_webhook_application_message(chat_id, text, message, user_id)
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки сообщения: {e}")
@@ -270,14 +274,14 @@ async def handle_webhook_bot_started(event: dict):
         # Max отправляет: {"chat_id": ..., "user": {"user_id": ..., ...}}
         user_data_obj = event.get("user", {})
         user_id = str(user_data_obj.get("user_id", ""))
-        chat_id = event.get("chat_id")
+        chat_id = str(event.get("chat_id", ""))
 
-        if not user_id:
-            logger.warning(f"⚠️ Нет user_id в bot_started")
+        if not chat_id:
+            logger.warning(f"⚠️ Нет chat_id в bot_started")
             return
 
         logger.info(f"🟢 Bot started: user_id={user_id}, chat_id={chat_id}")
-        await send_start_message(user_id)
+        await send_start_message(chat_id)
 
     except Exception as e:
         logger.error(f"❌ Ошибка обработки bot_started: {e}")
@@ -399,61 +403,63 @@ async def handle_client_type(user_id: str, client_type_key: str):
     await bot.send_message(chat_id=user_id, text=text)
 
 
-async def handle_webhook_application_message(user_id: str, text: str, message: dict):
+async def handle_webhook_application_message(chat_id: str, text: str, message: dict, user_id: str = ""):
     """Обработка сообщения для заявки"""
-    if user_id not in user_data:
-        await send_start_message(user_id)
+    # Используем chat_id как ключ в хранилище (так как это реальный идентификатор диалога)
+    if chat_id not in user_data:
+        await send_start_message(chat_id)
         return
 
-    state = user_states.get(user_id, "menu")
+    state = user_states.get(chat_id, "menu")
 
-    logger.info(f"🔄 Обработка сообщения от {user_id}, состояние: {state}")
+    logger.info(f"🔄 Обработка сообщения от chat_id={chat_id}, user_id={user_id}, состояние: {state}")
 
     if state == "waiting_name":
-        user_data[user_id]['name'] = text
-        user_states[user_id] = "waiting_phone"
+        user_data[chat_id]['name'] = text
+        user_states[chat_id] = "waiting_phone"
 
         text_resp = "📞 Спасибо! Введите ваш номер телефона:"
-        await bot.send_message(chat_id=user_id, text=text_resp)
+        await bot.send_message(chat_id=chat_id, text=text_resp)
 
     elif state == "waiting_phone":
         if not validate_phone(text):
-            await bot.send_message(chat_id=user_id, text="❌ Некорректный номер телефона. Попробуйте снова.")
+            await bot.send_message(chat_id=chat_id, text="❌ Некорректный номер телефона. Попробуйте снова.")
             return
 
-        user_data[user_id]['phone'] = text
-        user_states[user_id] = "waiting_description"
+        user_data[chat_id]['phone'] = text
+        user_states[chat_id] = "waiting_description"
 
-        client_type = user_data[user_id].get('client_type', 'Клиент')
-        text_resp = f"📋 Спасибо, {user_data[user_id]['name']}!\n\nОпишите кратко вашу проблему или вопрос:"
+        client_type = user_data[chat_id].get('client_type', 'Клиент')
+        text_resp = f"📋 Спасибо, {user_data[chat_id]['name']}!\n\nОпишите кратко вашу проблему или вопрос:"
 
-        await bot.send_message(chat_id=user_id, text=text_resp)
+        await bot.send_message(chat_id=chat_id, text=text_resp)
 
     elif state == "waiting_description":
-        category, description = parse_category_and_description(text, user_data[user_id].get('client_type', ''))
+        category, description = parse_category_and_description(text, user_data[chat_id].get('client_type', ''))
 
-        user_data[user_id]['category'] = category
-        user_data[user_id]['description'] = description
-        user_states[user_id] = "completed"
+        user_data[chat_id]['category'] = category
+        user_data[chat_id]['description'] = description
+        user_states[chat_id] = "completed"
 
         # Отправляем заявку админу
         admin_text = f"""
 📋 **НОВАЯ ЗАЯВКА**
 
-👤 Имя: {user_data[user_id]['name']}
-📱 Телефон: {user_data[user_id]['phone']}
-👨‍⚖️ Тип клиента: {user_data[user_id]['client_type']}
+👤 Имя: {user_data[chat_id]['name']}
+📱 Телефон: {user_data[chat_id]['phone']}
+👨‍⚖️ Тип клиента: {user_data[chat_id]['client_type']}
 📌 Категория: {category}
 📝 Описание: {description}
 
-👤 Max ID: {user_id}
+👤 User ID: {user_id}
+👤 Chat ID: {chat_id}
 ⏰ Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}
 """
 
         await send_admin_message(admin_text)
 
         text_resp = "✅ Спасибо за заявку! Мы свяжемся с вами в ближайшее время."
-        await bot.send_message(chat_id=user_id, text=text_resp)
+        await bot.send_message(chat_id=chat_id, text=text_resp)
 
 
 # ===== ЗДОРОВЬЕ И ИНИЦИАЛИЗАЦИЯ =====
