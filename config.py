@@ -38,7 +38,7 @@ print(f"[CONFIG]   Final MAX_BOT_TOKEN={repr(MAX_BOT_TOKEN[:30] if MAX_BOT_TOKEN
 
 MAX_ADMIN_USER_ID = os.environ.get('MAX_ADMIN_USER_ID') or os.getenv('MAX_ADMIN_USER_ID', '240134783')
 MAX_ADMIN_PHONE = os.environ.get('MAX_ADMIN_PHONE') or os.getenv('MAX_ADMIN_PHONE', '+79859998589')
-WEBHOOK_URL = os.environ.get('WEBHOOK_URL') or os.getenv('WEBHOOK_URL', 'https://max-bot-production.railway.app/webhook')
+WEBHOOK_URL = os.environ.get('WEBHOOK_URL') or os.getenv('WEBHOOK_URL', 'https://max-secretary-bot-production.up.railway.app/webhook')
 WEBHOOK_PORT = int(os.environ.get('WEBHOOK_PORT') or os.getenv('PORT', '8080'))
 WEBHOOK_SECRET = os.environ.get('WEBHOOK_SECRET') or os.getenv('WEBHOOK_SECRET', 'max-bot-secret-key-12345')
 
