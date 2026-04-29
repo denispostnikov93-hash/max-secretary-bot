@@ -245,12 +245,13 @@ async def handle_webhook_callback(event: dict):
         message = event.get("message", {})
         recipient = message.get("recipient", {})
 
-        user_id = str(callback.get("user_id", ""))
+        # user_id может быть в callback или в message.recipient
+        user_id = str(callback.get("user_id", "") or recipient.get("user_id", ""))
         chat_id = str(recipient.get("chat_id", ""))
         payload = callback.get("payload")
 
         if not user_id or not chat_id:
-            logger.warning(f"⚠️ Нет user_id или chat_id в callback")
+            logger.warning(f"⚠️ Нет user_id или chat_id в callback. callback={callback}, recipient={recipient}")
             return
 
         logger.info(f"🔘 Callback от user_id={user_id}, chat_id={chat_id}: {payload}")
